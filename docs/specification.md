@@ -10,7 +10,7 @@ Understanding web app logic including security risks involved in creating a web 
 
 ## Features
 
-For a visual representation of how features interact and the user flow, see the [Feature Flow Diagram](./flow_diagram.md).
+For a visual representation of how features interact and the user flow, see the [Feature Flow Diagram](./flow_diagram.svg).
 
 ### F1. Product browsing
 
