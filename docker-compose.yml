@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: palletdb
+    environment:
+      POSTGRES_DB: palletdb
+      POSTGRES_USER: palletu
+      POSTGRES_PASSWORD: palletpass
+    ports:
+      - "12121:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

@@ -1,0 +1,41 @@
+@use '@angular/material' as mat;
+
+// M3 theme — use built-in orange palette, light mode
+html {
+  @include mat.theme((
+    color: (
+      theme-type: light,
+      primary: mat.$orange-palette,
+    ),
+    typography: Roboto,
+    density: 0,
+  ));
+}
+
+// RO-Wheels design tokens
+:root {
+  --rw-dark:     #0A0F1E;
+  --rw-dark-card: #111827;
+  --rw-orange:   #E8601C;
+  --rw-orange-h: #D45218;
+  --rw-bg:       #F5F7FA;
+  --rw-white:    #FFFFFF;
+  --rw-border:   #E1E4E8;
+  --rw-text:     #1C1C2E;
+  --rw-muted:    #6B7280;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  font-family: Inter, Roboto, 'Helvetica Neue', sans-serif;
+  background: var(--rw-bg);
+  color: var(--rw-text);
+}
+
+// Keep Material spinner using our orange
+.mat-mdc-progress-spinner circle {
+  stroke: var(--rw-orange) !important;
+}

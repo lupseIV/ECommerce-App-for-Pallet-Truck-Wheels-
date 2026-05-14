@@ -1,0 +1,95 @@
+@startuml SD-Admin-Management
+title Inventory & Order Management (Admin) — Iteration 3
+
+actor Admin
+
+participant "AdminDashboard\n(Angular)" as UI
+participant "AdminService\n(Angular)" as FE_ADMIN
+participant "HTTP" as HTTP
+participant "AdminController\n(Spring)" as CTRL
+participant "AdminLogicService\n(Spring)" as B_SVC
+participant "ProductRepository" as PROD_REPO
+participant "OrderRepository" as ORDER_REPO
+database "PostgreSQL" as DB
+
+== UC-16: Review Stock Levels ==
+Admin -> UI: navigates to Inventory tab
+UI -> FE_ADMIN: getStockLevels()
+activate FE_ADMIN
+FE_ADMIN -> HTTP: GET /api/admin/inventory
+HTTP -> CTRL: getInventoryStats()
+CTRL -> B_SVC: calculateStockLevels()
+B_SVC -> PROD_REPO: findAll()
+PROD_REPO -> DB: SELECT id, name, stock_qty FROM products
+DB --> PROD_REPO: Product rows
+PROD_REPO --> B_SVC: List<Product>
+B_SVC -> B_SVC: evaluateLowStock(products)
+B_SVC --> CTRL: InventoryReportDTO
+CTRL --> HTTP: 200 OK {InventoryReportDTO}
+HTTP --> FE_ADMIN: InventoryReportDTO
+FE_ADMIN --> UI: display inventory table & low-stock warnings
+deactivate FE_ADMIN
+
+== UC-1: Add Products (Import CSV/JSON) ==
+opt Replenish / Import Products
+    Admin -> UI: uploads CSV/JSON file
+    UI -> FE_ADMIN: uploadProductFile(file)
+    FE_ADMIN -> HTTP: POST /api/admin/products/import\n(multipart/form-data)
+    HTTP -> CTRL: importProducts(MultipartFile)
+    CTRL -> B_SVC: parseAndImport(file)
+    B_SVC -> B_SVC: validate file format & data integrity
+
+    alt Valid File
+        B_SVC -> PROD_REPO: saveAll(newProducts)
+        PROD_REPO -> DB: INSERT INTO products ... ON CONFLICT DO UPDATE
+        DB --> PROD_REPO: records upserted
+        PROD_REPO --> B_SVC: List<Product>
+        B_SVC --> CTRL: ImportResultDTO (success log)
+        CTRL --> HTTP: 200 OK {ImportResultDTO}
+    else Invalid File (UC-1.E1 / E2)
+        B_SVC -> B_SVC: generate error details
+        B_SVC --> CTRL: throws ImportException
+        CTRL -> CTRL: GlobalExceptionHandler
+        CTRL --> HTTP: 400 Bad Request {errorDetails}
+    end
+
+    HTTP --> FE_ADMIN: response / error
+    FE_ADMIN --> UI: display import log (success or partial errors)
+end
+
+== UC-15: Review and Modify Orders ==
+Admin -> UI: navigates to Orders tab
+UI -> FE_ADMIN: getAllOrders()
+FE_ADMIN -> HTTP: GET /api/admin/orders
+HTTP -> CTRL: getAllOrders()
+CTRL -> B_SVC: fetchAllOrders()
+B_SVC -> ORDER_REPO: findAll()
+ORDER_REPO -> DB: SELECT * FROM orders
+DB --> ORDER_REPO: Order rows
+ORDER_REPO --> B_SVC: List<Order>
+B_SVC --> CTRL: List<OrderDTO>
+CTRL --> HTTP: 200 OK List<OrderDTO>
+HTTP --> FE_ADMIN: List<OrderDTO>
+FE_ADMIN --> UI: render comprehensive order list
+
+opt Modify Order Status
+    Admin -> UI: changes order status to "Shipped"
+    UI -> FE_ADMIN: updateOrderStatus(orderId, 'ON_GOING')
+    FE_ADMIN -> HTTP: PUT /api/admin/orders/{id}/status\n{"status": "ON_GOING"}
+    HTTP -> CTRL: updateStatus(orderId, status)
+    CTRL -> B_SVC: changeOrderStatus(orderId, status)
+    B_SVC -> ORDER_REPO: findById(orderId)
+    ORDER_REPO -> DB: SELECT * FROM orders WHERE id = ?
+    DB --> ORDER_REPO: Order row
+    ORDER_REPO --> B_SVC: Order entity
+    B_SVC -> ORDER_REPO: save(order with new status)
+    ORDER_REPO -> DB: UPDATE orders SET status = ? WHERE id = ?
+    DB --> ORDER_REPO: row updated
+    ORDER_REPO --> B_SVC: Order entity
+    B_SVC --> CTRL: OrderDTO
+    CTRL --> HTTP: 200 OK {OrderDTO}
+    HTTP --> FE_ADMIN: success
+    FE_ADMIN --> UI: update order row in table
+end
+
+@enduml

@@ -1,0 +1,113 @@
+@startuml SD-Complete-Shopping-Journey
+title Core Shopping Journey (Browsing to Checkout) — Iteration 2
+
+actor Client
+
+participant "ProductListComponent\n(Angular)" as PROD_UI
+participant "CartComponent\n(Angular)" as CART_UI
+participant "CheckoutComponent\n(Angular)" as CHECKOUT_UI
+participant "CartService\n(Angular)" as FE_CART
+participant "OrderService\n(Angular)" as FE_ORDER
+participant "HTTP" as HTTP
+participant "CartController\n(Spring)" as CART_CTRL
+participant "OrderController\n(Spring)" as ORDER_CTRL
+participant "CartService\n(Spring)" as BE_CART
+participant "OrderService\n(Spring)" as BE_ORDER
+participant "CartRepository" as CART_REPO
+participant "OrderRepository" as ORDER_REPO
+database "PostgreSQL" as DB
+participant "PaymentGateway" as PG
+
+== UC-4 & UC-5: View & Filter Products ==
+Client -> PROD_UI: navigates to catalog & applies filters
+note over PROD_UI, DB: Handled via ProductController → ProductService → ProductRepository.\nSee CD-1 & CD-2 (Iteration 1) for full class structure.
+PROD_UI --> Client: displays filtered products
+
+== UC-6: Add Product to Cart ==
+Client -> PROD_UI: clicks "Add to Cart"
+PROD_UI -> FE_CART: addToCart(productId, qty=1)
+activate FE_CART
+FE_CART -> HTTP: POST /api/cart/items\n{productId, qty}
+activate HTTP
+HTTP -> CART_CTRL: addItem(CartItemRequest)
+activate CART_CTRL
+CART_CTRL -> BE_CART: addItemToCart(userId, req)
+activate BE_CART
+BE_CART -> CART_REPO: save(cartItem)
+activate CART_REPO
+CART_REPO -> DB: INSERT INTO cart_items ...
+DB --> CART_REPO: row inserted
+CART_REPO --> BE_CART: CartItem entity
+deactivate CART_REPO
+BE_CART --> CART_CTRL: CartDTO
+deactivate BE_CART
+CART_CTRL --> HTTP: 200 OK {CartDTO}
+deactivate CART_CTRL
+HTTP --> FE_CART: CartDTO response
+deactivate HTTP
+FE_CART --> PROD_UI: update cart item count
+deactivate FE_CART
+
+== UC-7 & UC-8: Review & Modify Cart ==
+Client -> CART_UI: opens Shopping Cart
+CART_UI -> FE_CART: getCart()
+FE_CART -> HTTP: GET /api/cart
+HTTP -> CART_CTRL: getCart()
+CART_CTRL -> BE_CART: getClientCart(userId)
+BE_CART -> CART_REPO: findByUserId(userId)
+CART_REPO -> DB: SELECT * FROM cart_items WHERE user_id = ?
+DB --> CART_REPO: cart item rows
+CART_REPO --> BE_CART: Cart entity
+BE_CART --> CART_CTRL: CartDTO
+CART_CTRL --> HTTP: 200 OK {CartDTO}
+HTTP --> FE_CART: CartDTO
+FE_CART --> CART_UI: render cart details
+
+opt Remove Item
+    Client -> CART_UI: clicks "Remove" on item
+    CART_UI -> FE_CART: removeItem(itemId)
+    FE_CART -> HTTP: DELETE /api/cart/items/{itemId}
+    HTTP -> CART_CTRL: removeItem(itemId)
+    CART_CTRL -> BE_CART: removeItem(userId, itemId)
+    BE_CART -> CART_REPO: deleteById(itemId)
+    CART_REPO -> DB: DELETE FROM cart_items WHERE id = ?
+    DB --> CART_REPO: row deleted
+    BE_CART --> CART_CTRL: void
+    CART_CTRL --> HTTP: 204 No Content
+    HTTP --> FE_CART: success
+    FE_CART --> CART_UI: update cart view & total
+end
+
+== UC-9 & UC-12: Checkout & Payment ==
+Client -> CHECKOUT_UI: clicks "Checkout Order"
+CHECKOUT_UI -> FE_ORDER: checkout(CheckoutRequest)
+activate FE_ORDER
+FE_ORDER -> HTTP: POST /api/orders/checkout\n{cartId, paymentDetails}
+activate HTTP
+HTTP -> ORDER_CTRL: processCheckout(CheckoutRequest)
+activate ORDER_CTRL
+ORDER_CTRL -> BE_ORDER: createOrderAndPay(userId, req)
+activate BE_ORDER
+BE_ORDER -> CART_REPO: findByUserId(userId)
+CART_REPO --> BE_ORDER: Cart entity (items + totals)
+BE_ORDER -> PG: processPayment(paymentDetails, amount)
+activate PG
+PG --> BE_ORDER: PaymentResponse (authorized)
+deactivate PG
+BE_ORDER -> ORDER_REPO: save(newOrder)
+activate ORDER_REPO
+ORDER_REPO -> DB: INSERT INTO orders + order_items\nUPDATE products SET stock = stock - qty\nDELETE FROM cart_items WHERE user_id = ?
+DB --> ORDER_REPO: transaction committed
+ORDER_REPO --> BE_ORDER: Order entity
+deactivate ORDER_REPO
+BE_ORDER --> ORDER_CTRL: OrderConfirmationDTO
+deactivate BE_ORDER
+ORDER_CTRL --> HTTP: 200 OK {OrderConfirmationDTO}
+deactivate ORDER_CTRL
+HTTP --> FE_ORDER: OrderConfirmationDTO
+deactivate HTTP
+FE_ORDER --> CHECKOUT_UI: navigate to /orders/success
+deactivate FE_ORDER
+CHECKOUT_UI --> Client: displays order success message
+
+@enduml

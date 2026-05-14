@@ -1,0 +1,92 @@
+@startuml SD-Account-Management
+title Account Management & Support Flow — Iterations 2 & 3
+
+actor Client
+
+participant "OrderHistoryComponent\n(Angular)" as ORDER_UI
+participant "ProfileComponent\n(Angular)" as PROFILE_UI
+participant "ContactComponent\n(Angular)" as CONTACT_UI
+participant "OrderService\n(Angular)" as FE_ORDER
+participant "AccountService\n(Angular)" as FE_ACCT
+participant "SupportService\n(Angular)" as FE_SUPPORT
+participant "HTTP" as HTTP
+participant "OrderController\n(Spring)" as ORDER_CTRL
+participant "UserController\n(Spring)" as USER_CTRL
+participant "SupportController\n(Spring)" as SUPPORT_CTRL
+participant "OrderService\n(Spring)" as BE_ORDER
+participant "AccountService\n(Spring)" as BE_ACCT
+participant "SupportService\n(Spring)" as BE_SUPPORT
+participant "OrderRepository" as ORDER_REPO
+participant "UserRepository" as USER_REPO
+database "PostgreSQL" as DB
+participant "EmailService" as EMAIL
+
+== UC-10: View Orders ==
+Client -> ORDER_UI: navigate to /orders
+ORDER_UI -> FE_ORDER: getMyOrders()
+FE_ORDER -> HTTP: GET /api/orders/me
+HTTP -> ORDER_CTRL: getMyOrders()
+ORDER_CTRL -> BE_ORDER: fetchUserOrders(userId)
+BE_ORDER -> ORDER_REPO: findByUserId(userId)
+ORDER_REPO -> DB: SELECT * FROM orders WHERE user_id = ?
+DB --> ORDER_REPO: List<Order> rows
+ORDER_REPO --> BE_ORDER: List<Order>
+BE_ORDER --> ORDER_CTRL: List<OrderDTO>
+ORDER_CTRL --> HTTP: 200 OK List<OrderDTO>
+HTTP --> FE_ORDER: List<OrderDTO>
+FE_ORDER --> ORDER_UI: render order history (Ongoing / Finished)
+
+== UC-11: Cancel Order ==
+opt Cancel Active Order
+    Client -> ORDER_UI: clicks "Cancel Order"
+    ORDER_UI -> FE_ORDER: cancelOrder(orderId)
+    FE_ORDER -> HTTP: PUT /api/orders/{orderId}/cancel
+    HTTP -> ORDER_CTRL: cancelOrder(orderId)
+    ORDER_CTRL -> BE_ORDER: processCancellation(orderId)
+    BE_ORDER -> ORDER_REPO: findById(orderId)
+    ORDER_REPO -> DB: SELECT * FROM orders WHERE id = ?
+    DB --> ORDER_REPO: Order row
+    ORDER_REPO --> BE_ORDER: Order entity
+    BE_ORDER -> ORDER_REPO: save(order with CANCELED + restock)
+    ORDER_REPO -> DB: UPDATE orders SET status = 'CANCELED' WHERE id = ?\nUPDATE products SET stock = stock + qty
+    DB --> ORDER_REPO: rows updated
+    ORDER_REPO --> BE_ORDER: Order entity
+    BE_ORDER --> ORDER_CTRL: OrderDTO (CANCELED)
+    ORDER_CTRL --> HTTP: 200 OK {OrderDTO}
+    HTTP --> FE_ORDER: success
+    FE_ORDER --> ORDER_UI: show cancellation success & update list
+end
+
+== UC-13: Update Personal Data ==
+opt Update Profile
+    Client -> PROFILE_UI: updates profile info & submits
+    PROFILE_UI -> FE_ACCT: updateProfile(UserUpdateRequest)
+    FE_ACCT -> HTTP: PUT /api/users/profile
+    HTTP -> USER_CTRL: updateProfile(UserUpdateRequest)
+    USER_CTRL -> BE_ACCT: updateUser(userId, req)
+    BE_ACCT -> USER_REPO: save(updatedUser)
+    USER_REPO -> DB: UPDATE users SET email = ?, billing_address = ? WHERE id = ?
+    DB --> USER_REPO: row updated
+    USER_REPO --> BE_ACCT: User entity
+    BE_ACCT --> USER_CTRL: UserDTO
+    USER_CTRL --> HTTP: 200 OK {UserDTO}
+    HTTP --> FE_ACCT: UserDTO
+    FE_ACCT --> PROFILE_UI: show profile updated message
+end
+
+== UC-14: Contact Help Desk ==
+opt Request Custom Wheels
+    Client -> CONTACT_UI: submits Contact form
+    CONTACT_UI -> FE_SUPPORT: sendMessage(HelpDeskRequest)
+    FE_SUPPORT -> HTTP: POST /api/support/contact\n{name, email, message}
+    HTTP -> SUPPORT_CTRL: contactSupport(HelpDeskRequest)
+    SUPPORT_CTRL -> BE_SUPPORT: processHelpRequest(req)
+    BE_SUPPORT -> EMAIL: sendEmail(adminQueue, messageDetails)
+    EMAIL --> BE_SUPPORT: EmailSentEvent
+    BE_SUPPORT --> SUPPORT_CTRL: void (success)
+    SUPPORT_CTRL --> HTTP: 200 OK
+    HTTP --> FE_SUPPORT: success
+    FE_SUPPORT --> CONTACT_UI: show message sent confirmation
+end
+
+@enduml
