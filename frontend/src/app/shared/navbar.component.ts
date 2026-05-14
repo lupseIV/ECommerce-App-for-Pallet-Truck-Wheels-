@@ -1,6 +1,7 @@
 import { Component, inject } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { AuthService } from '../core/services/auth.service';
+import { CartService } from '../core/services/cart.service';
 
 @Component({
   selector: 'app-navbar',
@@ -25,6 +26,33 @@ import { AuthService } from '../core/services/auth.service';
           @if (auth.isAdmin()) {
             <span class="navbar__badge">Admin</span>
           }
+
+          <a routerLink="/orders" class="navbar__icon-btn" title="Comenzile mele">
+            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24">
+              <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/>
+              <rect x="9" y="3" width="6" height="4" rx="1"/>
+              <path d="M9 12h6M9 16h4"/>
+            </svg>
+          </a>
+
+          <a routerLink="/profile" class="navbar__icon-btn" title="Profilul meu">
+            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24">
+              <circle cx="12" cy="7" r="4"/>
+              <path d="M5.5 21a8.38 8.38 0 0113 0"/>
+            </svg>
+          </a>
+
+          <button class="navbar__cart-btn" (click)="cart.toggle()" title="Coșul tău">
+            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24">
+              <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/>
+              <line x1="3" y1="6" x2="21" y2="6"/>
+              <path d="M16 10a4 4 0 01-8 0"/>
+            </svg>
+            @if (cart.itemCount() > 0) {
+              <span class="navbar__cart-badge">{{ cart.itemCount() }}</span>
+            }
+          </button>
+
           <span class="navbar__user">{{ auth.username() }}</span>
           <button class="navbar__logout" (click)="auth.logout()">Deconectare</button>
         </div>
@@ -48,7 +76,7 @@ import { AuthService } from '../core/services/auth.service';
       height: 100%;
       display: flex;
       align-items: center;
-      gap: 32px;
+      gap: 28px;
     }
 
     .navbar__logo {
@@ -99,7 +127,7 @@ import { AuthService } from '../core/services/auth.service';
     .navbar__actions {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 8px;
       flex-shrink: 0;
     }
 
@@ -111,12 +139,66 @@ import { AuthService } from '../core/services/auth.service';
       letter-spacing: 0.6px;
       padding: 2px 8px;
       border-radius: 10px;
-      text-transform: uppercase;
+    }
+
+    .navbar__icon-btn {
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: rgba(255,255,255,0.6);
+      border-radius: 6px;
+      text-decoration: none;
+      transition: color .15s, background .15s;
+    }
+
+    .navbar__icon-btn:hover {
+      color: #fff;
+      background: rgba(255,255,255,0.08);
+    }
+
+    .navbar__cart-btn {
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: rgba(255,255,255,0.6);
+      background: none;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      position: relative;
+      transition: color .15s, background .15s;
+    }
+
+    .navbar__cart-btn:hover {
+      color: #fff;
+      background: rgba(255,255,255,0.08);
+    }
+
+    .navbar__cart-badge {
+      position: absolute;
+      top: 2px;
+      right: 2px;
+      background: var(--rw-orange);
+      color: #fff;
+      font-size: 9px;
+      font-weight: 700;
+      min-width: 16px;
+      height: 16px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 3px;
     }
 
     .navbar__user {
       color: rgba(255,255,255,0.75);
       font-size: 13px;
+      margin-left: 4px;
     }
 
     .navbar__logout {
@@ -139,4 +221,5 @@ import { AuthService } from '../core/services/auth.service';
 })
 export class NavbarComponent {
   readonly auth = inject(AuthService);
+  readonly cart = inject(CartService);
 }

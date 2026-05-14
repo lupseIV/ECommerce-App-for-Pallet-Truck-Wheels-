@@ -2,6 +2,7 @@ import { Component, inject, signal, OnInit } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ProductService } from '../core/services/product.service';
+import { CartService } from '../core/services/cart.service';
 import { ProductFilterComponent } from './product-filter.component';
 import { Product, ProductFilter } from '../core/models/product.model';
 
@@ -98,7 +99,8 @@ import { Product, ProductFilter } from '../core/models/product.model';
                       class="product-card__cart"
                       [class.product-card__cart--disabled]="p.stockQty === 0"
                       [disabled]="p.stockQty === 0"
-                      title="Adaugă în coș (disponibil în Iterația 2)"
+                      (click)="addToCart(p)"
+                      title="Adaugă în coș"
                     >
                       R
                     </button>
@@ -347,6 +349,7 @@ import { Product, ProductFilter } from '../core/models/product.model';
 })
 export class ProductListComponent implements OnInit {
   private readonly productService = inject(ProductService);
+  private readonly cartService    = inject(CartService);
 
   readonly products = signal<Product[]>([]);
   readonly loading  = signal(true);
@@ -359,6 +362,12 @@ export class ProductListComponent implements OnInit {
   onFilterChange(filter: ProductFilter): void {
     this.currentFilter = filter;
     this.loadProducts();
+  }
+
+  addToCart(product: Product): void {
+    this.cartService.addToCart({ productId: product.id, qty: 1 }).subscribe({
+      next: () => this.cartService.open(),
+    });
   }
 
   private loadProducts(): void {
