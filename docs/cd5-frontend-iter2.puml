@@ -1,0 +1,211 @@
+@startuml CD-5: Iteration 2 — Frontend Class Diagram
+title Iteration 2 — Frontend (Angular) Class Structure
+
+skinparam classAttributeIconSize 0
+skinparam class {
+    BackgroundColor White
+    BorderColor Black
+    ArrowColor Black
+}
+skinparam linetype ortho
+
+' ─────────────────────────────────────────
+' ITERATION 1 REFERENCES
+' ─────────────────────────────────────────
+
+class AuthGuard <<boundary>> {
+    +canActivate(): boolean | UrlTree
+}
+note top of AuthGuard : Defined in Iteration 1 (CD-2)
+
+class AuthService <<control>> {
+    +isLoggedIn: Signal<boolean>
+    +getToken(): string | null
+}
+note top of AuthService : Defined in Iteration 1 (CD-2)
+
+' ─────────────────────────────────────────
+' MODELS (Iteration 2)
+' ─────────────────────────────────────────
+
+class CartItem <<entity>> {
+    +id: number
+    +productId: number
+    +name: string
+    +quantity: number
+    +unitPrice: number
+}
+
+class Cart <<entity>> {
+    +id: number
+    +userId: number
+    +items: CartItem[]
+    +total: number
+}
+
+class PaymentDetails <<entity>> {
+    +cardNumber: string
+    +expiry: string
+    +cvv: string
+}
+
+class CheckoutRequest <<entity>> {
+    +cartId: number
+    +paymentDetails: PaymentDetails
+}
+
+class OrderConfirmation <<entity>> {
+    +orderId: number
+    +status: OrderState
+    +total: number
+}
+
+class OrderItem <<entity>> {
+    +id: number
+    +productId: number
+    +name: string
+    +quantity: number
+    +unitPrice: number
+}
+
+class Order <<entity>> {
+    +id: number
+    +userId: number
+    +status: OrderState
+    +items: OrderItem[]
+    +total: number
+    +createdAt: string
+}
+
+enum OrderState <<entity>> {
+    REGISTERED
+    CONFIRMED
+    ON_GOING
+    DELIVERED
+    CANCELED
+}
+
+class UserUpdateRequest <<entity>> {
+    +email: string
+    +billingAddress: string
+}
+
+class UserDTO <<entity>> {
+    +id: number
+    +username: string
+    +email: string
+    +billingAddress: string
+}
+
+' ─────────────────────────────────────────
+' SERVICES (Iteration 2)
+' ─────────────────────────────────────────
+
+class CartService <<control>> {
+    -apiUrl: string
+    +CartService(http: HttpClient)
+    +getCart(): Observable<Cart>
+    +addToCart(productId: number, qty: number): Observable<Cart>
+    +removeItem(itemId: number): Observable<void>
+}
+
+class OrderService <<control>> {
+    -apiUrl: string
+    +OrderService(http: HttpClient, router: Router)
+    +checkout(req: CheckoutRequest): Observable<OrderConfirmation>
+    +getMyOrders(): Observable<Order[]>
+    +cancelOrder(orderId: number): Observable<Order>
+}
+
+class AccountService <<control>> {
+    -apiUrl: string
+    +AccountService(http: HttpClient)
+    +getProfile(): Observable<UserDTO>
+    +updateProfile(data: UserUpdateRequest): Observable<UserDTO>
+}
+
+' ─────────────────────────────────────────
+' COMPONENTS (Iteration 2)
+' ─────────────────────────────────────────
+
+class CartComponent <<boundary>> {
+    -cart: Signal<Cart | null>
+    -loading: Signal<boolean>
+    +CartComponent(cartService: CartService,\n  router: Router)
+    +ngOnInit(): void
+    +onRemoveItem(itemId: number): void
+    +onCheckout(): void
+}
+
+class CheckoutComponent <<boundary>> {
+    -paymentForm: FormGroup
+    -loading: Signal<boolean>
+    -errorMessage: Signal<string | null>
+    +CheckoutComponent(orderService: OrderService,\n  cartService: CartService,\n  router: Router, fb: FormBuilder)
+    +onSubmit(): void
+}
+
+class OrderHistoryComponent <<boundary>> {
+    -orders: Signal<Order[]>
+    -loading: Signal<boolean>
+    +OrderHistoryComponent(orderService: OrderService)
+    +ngOnInit(): void
+    +onCancelOrder(orderId: number): void
+}
+
+class ProfileComponent <<boundary>> {
+    -profile: Signal<UserDTO | null>
+    -profileForm: FormGroup
+    -loading: Signal<boolean>
+    +ProfileComponent(accountService: AccountService,\n  fb: FormBuilder)
+    +ngOnInit(): void
+    +onSave(): void
+}
+
+' ─────────────────────────────────────────
+' ROUTING (updated for Iteration 2)
+' ─────────────────────────────────────────
+
+class AppRoutes <<boundary>> {
+    /login → LoginComponent
+    /products → ProductListComponent [AuthGuard]
+    /cart → CartComponent [AuthGuard]
+    /checkout → CheckoutComponent [AuthGuard]
+    /orders → OrderHistoryComponent [AuthGuard]
+    /profile → ProfileComponent [AuthGuard]
+    / → redirect /products
+}
+
+' ─────────────────────────────────────────
+' SERVICE → MODEL
+' ─────────────────────────────────────────
+
+CartService ..> Cart : <<returns>>
+CartService ..> CartItem : <<returns>>
+OrderService ..> Order : <<returns>>
+OrderService ..> OrderConfirmation : <<returns>>
+OrderService ..> CheckoutRequest : <<uses>>
+AccountService ..> UserDTO : <<returns>>
+AccountService ..> UserUpdateRequest : <<uses>>
+
+' ─────────────────────────────────────────
+' COMPONENT → SERVICE
+' ─────────────────────────────────────────
+
+CartComponent "1" --> "1" CartService : -cartService
+CheckoutComponent "1" --> "1" OrderService : -orderService
+CheckoutComponent "1" --> "1" CartService : -cartService
+OrderHistoryComponent "1" --> "1" OrderService : -orderService
+ProfileComponent "1" --> "1" AccountService : -accountService
+
+' ─────────────────────────────────────────
+' ROUTING DEPENDENCIES
+' ─────────────────────────────────────────
+
+AppRoutes ..> AuthGuard : canActivate
+AppRoutes ..> CartComponent : routes to
+AppRoutes ..> CheckoutComponent : routes to
+AppRoutes ..> OrderHistoryComponent : routes to
+AppRoutes ..> ProfileComponent : routes to
+
+@enduml

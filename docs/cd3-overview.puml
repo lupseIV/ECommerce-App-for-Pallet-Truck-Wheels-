@@ -1,0 +1,185 @@
+@startuml CD-3: Iteration 1 — Full Stack Overview
+title Iteration 1 — Full Stack Class Diagram (BCE Style)
+
+skinparam classAttributeIconSize 0
+skinparam class {
+    BackgroundColor White
+    BorderColor Black
+    ArrowColor Black
+}
+skinparam linetype ortho
+skinparam nodesep 60
+skinparam ranksep 50
+
+' ─────────────────────────────────────────
+' ENTITIES (domain model)
+' ─────────────────────────────────────────
+
+class User <<entity>> {
+    -id: Long
+    -username: String
+    -email: String
+    -password: String
+    -role: UserRole
+    -failedLoginAttempts: int
+    -lockedUntil: LocalDateTime
+    +isLocked(): boolean
+}
+
+abstract class Product <<entity>> {
+    -id: Long
+    -name: String
+    -price: BigDecimal
+    -stockQty: int
+    -imageUrl: String
+}
+
+class Wheel <<entity>> {
+    -maxLoad: int
+    -material: String
+    -size: String
+}
+
+class Bearing <<entity>> {
+    -diameter: String
+    -material: String
+    -size: String
+}
+
+Product <|-- Wheel
+Product <|-- Bearing
+
+' ─────────────────────────────────────────
+' REPOSITORIES (boundary — data access)
+' ─────────────────────────────────────────
+
+class UserRepository <<boundary>> {
+    +findByUsername(username: String): Optional<User>
+    +save(user: User): User
+}
+
+class ProductRepository <<boundary>> {
+    +findAll(): List<Product>
+    +findAll(spec: Specification): List<Product>
+}
+
+UserRepository ..> User : manages
+ProductRepository ..> Product : manages
+
+' ─────────────────────────────────────────
+' SPRING SERVICES (control — backend)
+' ─────────────────────────────────────────
+
+class AuthService <<control>> {
+    +AuthService(ur: UserRepository,\n  encoder: PasswordEncoder,\n  jwt: JwtTokenProvider)
+    +authenticate(request: LoginRequest): LoginResponse
+    -handleFailedLogin(user: User): void
+}
+
+class ProductService <<control>> {
+    +ProductService(pr: ProductRepository)
+    +getAllProducts(): List<ProductDTO>
+    +getFilteredProducts(filter: ProductFilterRequest): List<ProductDTO>
+    -toDTO(product: Product): ProductDTO
+}
+
+AuthService "1" --> "1" UserRepository : -ur    1
+ProductService "1" --> "1" ProductRepository : -pr    1
+
+' ─────────────────────────────────────────
+' JWT SECURITY (boundary)
+' ─────────────────────────────────────────
+
+class JwtTokenProvider <<boundary>> {
+    +generateToken(ud: UserDetails): String
+    +validateToken(token: String, ud: UserDetails): boolean
+    +extractUsername(token: String): String
+}
+
+AuthService "1" --> "1" JwtTokenProvider : -jwt    1
+
+' ─────────────────────────────────────────
+' SPRING CONTROLLERS (boundary — REST API)
+' ─────────────────────────────────────────
+
+class AuthController <<boundary>> {
+    +login(request: LoginRequest): ResponseEntity<LoginResponse>
+    +logout(): ResponseEntity<Void>
+}
+
+class ProductController <<boundary>> {
+    +getProducts(name, type, size,\n  material, maxLoad, diameter): ResponseEntity<List<ProductDTO>>
+}
+
+AuthController ..> AuthService : -as    uses
+ProductController ..> ProductService : -ps    uses
+
+' ─────────────────────────────────────────
+' ANGULAR SERVICES (control — frontend)
+' ─────────────────────────────────────────
+
+class "AuthService\n(Angular)" as AngularAuthService <<control>> {
+    -_isLoggedIn: Signal<boolean>
+    -_role: Signal<UserRole | null>
+    +login(req: LoginRequest): Observable<LoginResponse>
+    +logout(): void
+    +getToken(): string | null
+    +isLoggedIn: Signal<boolean>
+    +isAdmin: Signal<boolean>
+}
+
+class "ProductService\n(Angular)" as AngularProductService <<control>> {
+    +getProducts(filter?: ProductFilter): Observable<Product[]>
+}
+
+class JwtInterceptor <<boundary>> {
+    +intercept(req, next): Observable
+}
+
+class AuthGuard <<boundary>> {
+    +canActivate(): boolean | UrlTree
+}
+
+AngularAuthService ..> AuthController : HTTP POST /api/auth/login
+AngularAuthService ..> AuthController : HTTP POST /api/auth/logout
+AngularProductService ..> ProductController : HTTP GET /api/products
+JwtInterceptor ..> AngularAuthService : getToken()
+AuthGuard ..> AngularAuthService : isLoggedIn()
+
+' ─────────────────────────────────────────
+' ANGULAR COMPONENTS (boundary — UI)
+' ─────────────────────────────────────────
+
+class LoginComponent <<boundary>> {
+    -loading: Signal<boolean>
+    -errorMessage: Signal<string | null>
+    -form: FormGroup
+    +submit(): void
+}
+
+class NavbarComponent <<boundary>> {
+    +logout(): void
+}
+
+class ProductListComponent <<boundary>> {
+    -products: Signal<Product[]>
+    -loading: Signal<boolean>
+    -currentFilter: ProductFilter
+    +ngOnInit(): void
+    +onFilterChange(filter: ProductFilter): void
+    -loadProducts(): void
+}
+
+class ProductFilterComponent <<boundary>> {
+    -form: FormGroup
+    +filterChange: OutputEmitterRef<ProductFilter>
+    +reset(): void
+}
+
+LoginComponent "1" --> "1" AngularAuthService : -auth    1
+NavbarComponent "1" --> "1" AngularAuthService : -auth    1
+ProductListComponent "1" --> "1" AngularProductService : -productService    1
+ProductListComponent "1" --> "1" ProductFilterComponent : contains
+ProductFilterComponent ..> ProductListComponent : filterChange event
+
+@enduml

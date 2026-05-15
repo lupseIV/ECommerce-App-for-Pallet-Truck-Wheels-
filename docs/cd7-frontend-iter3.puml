@@ -1,0 +1,147 @@
+@startuml CD-7: Iteration 3 — Frontend Class Diagram
+title Iteration 3 — Frontend (Angular) Class Structure
+
+skinparam classAttributeIconSize 0
+skinparam class {
+    BackgroundColor White
+    BorderColor Black
+    ArrowColor Black
+}
+skinparam linetype ortho
+
+' ─────────────────────────────────────────
+' ITERATION 1 & 2 REFERENCES
+' ─────────────────────────────────────────
+
+class AuthGuard <<boundary>> {
+    +canActivate(): boolean | UrlTree
+}
+note top of AuthGuard : Defined in Iteration 1 (CD-2)
+
+class Order <<entity>> {
+    +id: number
+    +status: OrderState
+    +total: number
+    +createdAt: string
+}
+note top of Order : Defined in Iteration 2 (CD-5)
+
+' ─────────────────────────────────────────
+' MODELS (Iteration 3)
+' ─────────────────────────────────────────
+
+class ProductStock <<entity>> {
+    +id: number
+    +name: string
+    +stockQty: number
+    +isLowStock: boolean
+}
+
+class InventoryReport <<entity>> {
+    +products: ProductStock[]
+    +lowStockWarnings: string[]
+}
+
+class ImportResult <<entity>> {
+    +successCount: number
+    +errors: string[]
+}
+
+class HelpDeskRequest <<entity>> {
+    +name: string
+    +email: string
+    +message: string
+}
+
+' ─────────────────────────────────────────
+' SERVICES (Iteration 3)
+' ─────────────────────────────────────────
+
+class AdminService <<control>> {
+    -apiUrl: string
+    +AdminService(http: HttpClient)
+    +getStockLevels(): Observable<InventoryReport>
+    +uploadProductFile(file: File): Observable<ImportResult>
+    +getAllOrders(): Observable<Order[]>
+    +updateOrderStatus(orderId: number,\n  status: string): Observable<Order>
+}
+
+class SupportService <<control>> {
+    -apiUrl: string
+    +SupportService(http: HttpClient)
+    +sendMessage(req: HelpDeskRequest): Observable<void>
+}
+
+' ─────────────────────────────────────────
+' COMPONENTS (Iteration 3)
+' ─────────────────────────────────────────
+
+class AdminDashboard <<boundary>> {
+    -activeTab: Signal<string>
+    -inventory: Signal<InventoryReport | null>
+    -adminOrders: Signal<Order[]>
+    -importResult: Signal<ImportResult | null>
+    -loading: Signal<boolean>
+    +AdminDashboard(adminService: AdminService)
+    +ngOnInit(): void
+    +onTabChange(tab: string): void
+    +onFileUpload(file: File): void
+    +onStatusChange(orderId: number,\n  status: string): void
+}
+
+class ContactComponent <<boundary>> {
+    -contactForm: FormGroup
+    -loading: Signal<boolean>
+    -successMessage: Signal<string | null>
+    -errorMessage: Signal<string | null>
+    +ContactComponent(supportService: SupportService,\n  fb: FormBuilder)
+    +onSubmit(): void
+}
+
+' ─────────────────────────────────────────
+' ROUTING (updated for Iteration 3)
+' ─────────────────────────────────────────
+
+class AppRoutes <<boundary>> {
+    /login → LoginComponent
+    /products → ProductListComponent [AuthGuard]
+    /cart → CartComponent [AuthGuard]
+    /checkout → CheckoutComponent [AuthGuard]
+    /orders → OrderHistoryComponent [AuthGuard]
+    /profile → ProfileComponent [AuthGuard]
+    /admin → AdminDashboard [AuthGuard + AdminGuard]
+    /contact → ContactComponent
+    / → redirect /products
+}
+
+' ─────────────────────────────────────────
+' SERVICE → MODEL
+' ─────────────────────────────────────────
+
+AdminService ..> InventoryReport : <<returns>>
+AdminService ..> ImportResult : <<returns>>
+AdminService ..> Order : <<returns>>
+SupportService ..> HelpDeskRequest : <<uses>>
+
+' ─────────────────────────────────────────
+' COMPONENT → SERVICE
+' ─────────────────────────────────────────
+
+AdminDashboard "1" --> "1" AdminService : -adminService
+ContactComponent "1" --> "1" SupportService : -supportService
+
+' ─────────────────────────────────────────
+' MODEL RELATIONS
+' ─────────────────────────────────────────
+
+InventoryReport "1" --> "*" ProductStock
+
+' ─────────────────────────────────────────
+' ROUTING DEPENDENCIES
+' ─────────────────────────────────────────
+
+AppRoutes ..> AuthGuard : canActivate
+AppRoutes ..> AdminDashboard : routes to
+AppRoutes ..> ContactComponent : routes to
+
+@enduml

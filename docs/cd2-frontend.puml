@@ -1,0 +1,175 @@
+@startuml CD-2: Iteration 1 — Frontend Class Diagram
+title Iteration 1 — Frontend (Angular) Class Structure
+
+skinparam classAttributeIconSize 0
+skinparam class {
+    BackgroundColor White
+    BorderColor Black
+    ArrowColor Black
+}
+skinparam linetype ortho
+
+' ─────────────────────────────────────────
+' MODELS (entity)
+' ─────────────────────────────────────────
+
+class User <<entity>> {
+    +token: string
+    +role: UserRole
+    +username: string
+}
+
+class Product <<entity>> {
+    +id: number
+    +name: string
+    +price: number
+    +stockQty: number
+    +imageUrl: string | null
+    +type: ProductType
+    +maxLoad?: number
+    +material?: string
+    +size?: string
+    +diameter?: string
+    +bearingMaterial?: string
+    +bearingSize?: string
+}
+
+class ProductFilter <<entity>> {
+    +name?: string
+    +type?: ProductType
+    +size?: string
+    +material?: string
+    +maxLoad?: number
+    +diameter?: string
+}
+
+class LoginRequest <<entity>> {
+    +username: string
+    +password: string
+}
+
+class LoginResponse <<entity>> {
+    +token: string
+    +role: UserRole
+    +username: string
+}
+
+' ─────────────────────────────────────────
+' GUARDS & INTERCEPTORS (boundary)
+' ─────────────────────────────────────────
+
+class AuthGuard <<boundary>> {
+    +canActivate(): boolean | UrlTree
+}
+
+class JwtInterceptor <<boundary>> {
+    +intercept(req: HttpRequest,\n  next: HttpHandlerFn): Observable
+}
+
+' ─────────────────────────────────────────
+' SERVICES (control)
+' ─────────────────────────────────────────
+
+class AuthService <<control>> {
+    -_isLoggedIn: Signal<boolean>
+    -_role: Signal<UserRole | null>
+    -_username: Signal<string | null>
+    +isLoggedIn: Signal<boolean>
+    +role: Signal<UserRole | null>
+    +username: Signal<string | null>
+    +isAdmin: Signal<boolean>
+    +AuthService(http: HttpClient, router: Router)
+    +login(request: LoginRequest): Observable<LoginResponse>
+    +logout(): void
+    +getToken(): string | null
+}
+
+class ProductService <<control>> {
+    -apiUrl: string
+    +ProductService(http: HttpClient)
+    +getProducts(filter?: ProductFilter): Observable<Product[]>
+}
+
+' ─────────────────────────────────────────
+' COMPONENTS (boundary)
+' ─────────────────────────────────────────
+
+class LoginComponent <<boundary>> {
+    -loading: Signal<boolean>
+    -errorMessage: Signal<string | null>
+    -form: FormGroup
+    +LoginComponent(auth: AuthService,\n  router: Router, fb: FormBuilder)
+    +submit(): void
+}
+
+class NavbarComponent <<boundary>> {
+    +NavbarComponent(auth: AuthService)
+}
+
+class ProductListComponent <<boundary>> {
+    -products: Signal<Product[]>
+    -loading: Signal<boolean>
+    -error: Signal<boolean>
+    -displayedColumns: string[]
+    -currentFilter: ProductFilter
+    +ProductListComponent(productService: ProductService)
+    +ngOnInit(): void
+    +onFilterChange(filter: ProductFilter): void
+    -loadProducts(): void
+}
+
+class ProductFilterComponent <<boundary>> {
+    -form: FormGroup
+    +filterChange: OutputEmitterRef<ProductFilter>
+    +ProductFilterComponent(fb: FormBuilder)
+    +reset(): void
+    -emit(): void
+}
+
+' ─────────────────────────────────────────
+' ROUTING
+' ─────────────────────────────────────────
+
+class AppRoutes <<boundary>> {
+    /login → LoginComponent
+    /products → ProductListComponent [AuthGuard]
+    / → redirect /products
+}
+
+' ─────────────────────────────────────────
+' SERVICE → MODEL dependencies
+' ─────────────────────────────────────────
+
+AuthService ..> LoginRequest : <<uses>>
+AuthService ..> LoginResponse : <<returns>>
+ProductService ..> Product : <<returns>>
+ProductService ..> ProductFilter : <<uses>>
+
+' ─────────────────────────────────────────
+' COMPONENT → SERVICE associations
+' ─────────────────────────────────────────
+
+LoginComponent "1" --> "1" AuthService : -authService
+NavbarComponent "1" --> "1" AuthService : -auth
+ProductListComponent "1" --> "1" ProductService : -productService
+LoginComponent ..> LoginRequest : <<creates>>
+ProductListComponent ..> ProductFilter : <<uses>>
+
+' ─────────────────────────────────────────
+' COMPONENT → COMPONENT associations
+' ─────────────────────────────────────────
+
+ProductListComponent "1" --> "1" ProductFilterComponent : contains
+ProductFilterComponent ..> ProductFilter : emits
+
+' ─────────────────────────────────────────
+' GUARD & INTERCEPTOR dependencies
+' ─────────────────────────────────────────
+
+AuthGuard "1" --> "1" AuthService : uses
+JwtInterceptor ..> AuthService : getToken()
+AppRoutes ..> AuthGuard : canActivate
+AppRoutes ..> LoginComponent : routes to
+AppRoutes ..> ProductListComponent : routes to
+
+@enduml

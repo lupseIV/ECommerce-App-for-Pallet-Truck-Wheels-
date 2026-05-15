@@ -1,0 +1,273 @@
+@startuml CD-4: Iteration 2 — Backend Class Diagram
+title Iteration 2 — Backend (Spring Boot) Class Structure
+
+skinparam classAttributeIconSize 0
+skinparam class {
+    BackgroundColor White
+    BorderColor Black
+    ArrowColor Black
+}
+skinparam linetype ortho
+
+' ─────────────────────────────────────────
+' ITERATION 1 REFERENCES (boundary/entity)
+' ─────────────────────────────────────────
+
+class User <<entity>> {
+    -id: Long
+    -username: String
+    -email: String
+    -billingAddress: String
+}
+note top of User : Defined in Iteration 1 (CD-1)
+
+class UserRepository <<boundary>> {
+    +findById(id: Long): Optional<User>
+    +save(user: User): User
+}
+note top of UserRepository : Defined in Iteration 1 (CD-1)
+
+class ProductRepository <<boundary>> {
+    +findById(id: Long): Optional<Product>
+    +saveAll(products: List): List
+}
+note top of ProductRepository : Defined in Iteration 1 (CD-1)
+
+' ─────────────────────────────────────────
+' NEW ENTITIES (Iteration 2)
+' ─────────────────────────────────────────
+
+class Cart <<entity>> {
+    -id: Long
+    -userId: Long
+    -createdAt: LocalDateTime
+}
+
+class CartItem <<entity>> {
+    -id: Long
+    -cartId: Long
+    -productId: Long
+    -quantity: int
+    -unitPrice: BigDecimal
+}
+
+class Order <<entity>> {
+    -id: Long
+    -userId: Long
+    -totalPrice: BigDecimal
+    -status: OrderState
+    -createdAt: LocalDateTime
+}
+
+class OrderItem <<entity>> {
+    -id: Long
+    -orderId: Long
+    -productId: Long
+    -quantity: int
+    -unitPrice: BigDecimal
+}
+
+enum OrderState <<entity>> {
+    REGISTERED
+    CONFIRMED
+    ON_GOING
+    DELIVERED
+    CANCELED
+}
+
+' ─────────────────────────────────────────
+' DTOs (Iteration 2)
+' ─────────────────────────────────────────
+
+class CartItemRequest <<entity>> {
+    +productId: Long
+    +qty: int
+}
+
+class CartItemDTO <<entity>> {
+    +id: Long
+    +productId: Long
+    +name: String
+    +quantity: int
+    +unitPrice: BigDecimal
+}
+
+class CartDTO <<entity>> {
+    +id: Long
+    +userId: Long
+    +items: List<CartItemDTO>
+    +total: BigDecimal
+}
+
+class PaymentDetails <<entity>> {
+    +cardNumber: String
+    +expiry: String
+    +cvv: String
+}
+
+class CheckoutRequest <<entity>> {
+    +cartId: Long
+    +paymentDetails: PaymentDetails
+}
+
+class PaymentResponse <<entity>> {
+    +authorized: boolean
+    +transactionId: String
+}
+
+class OrderItemDTO <<entity>> {
+    +id: Long
+    +productId: Long
+    +name: String
+    +quantity: int
+    +unitPrice: BigDecimal
+}
+
+class OrderDTO <<entity>> {
+    +id: Long
+    +status: OrderState
+    +items: List<OrderItemDTO>
+    +total: BigDecimal
+    +createdAt: LocalDateTime
+}
+
+class OrderConfirmationDTO <<entity>> {
+    +orderId: Long
+    +status: OrderState
+    +total: BigDecimal
+}
+
+class UserUpdateRequest <<entity>> {
+    +email: String
+    +billingAddress: String
+}
+
+class UserDTO <<entity>> {
+    +id: Long
+    +username: String
+    +email: String
+    +billingAddress: String
+}
+
+' ─────────────────────────────────────────
+' REPOSITORIES (Iteration 2)
+' ─────────────────────────────────────────
+
+class CartRepository <<boundary>> {
+    +findByUserId(userId: Long): Optional<Cart>
+    +save(cart: Cart): Cart
+    +deleteById(itemId: Long): void
+}
+
+class OrderRepository <<boundary>> {
+    +findByUserId(userId: Long): List<Order>
+    +findAll(): List<Order>
+    +findById(id: Long): Optional<Order>
+    +save(order: Order): Order
+}
+
+' ─────────────────────────────────────────
+' EXTERNAL GATEWAY
+' ─────────────────────────────────────────
+
+class PaymentGateway <<boundary>> {
+    +processPayment(details: PaymentDetails,\n  amount: BigDecimal): PaymentResponse
+}
+
+' ─────────────────────────────────────────
+' CONTROLLERS (Iteration 2)
+' ─────────────────────────────────────────
+
+class CartController <<boundary>> {
+    +addItem(req: CartItemRequest): ResponseEntity<CartDTO>
+    +getCart(): ResponseEntity<CartDTO>
+    +removeItem(itemId: Long): ResponseEntity<Void>
+}
+
+class OrderController <<boundary>> {
+    +processCheckout(req: CheckoutRequest): ResponseEntity<OrderConfirmationDTO>
+    +getMyOrders(): ResponseEntity<List<OrderDTO>>
+    +cancelOrder(orderId: Long): ResponseEntity<OrderDTO>
+}
+
+class UserController <<boundary>> {
+    +updateProfile(req: UserUpdateRequest): ResponseEntity<UserDTO>
+    +getProfile(): ResponseEntity<UserDTO>
+}
+
+' ─────────────────────────────────────────
+' SERVICES (Iteration 2)
+' ─────────────────────────────────────────
+
+class CartService <<control>> {
+    +CartService(cartRepo: CartRepository,\n  productRepo: ProductRepository)
+    +addItemToCart(userId: Long, req: CartItemRequest): CartDTO
+    +getClientCart(userId: Long): CartDTO
+    +removeItem(userId: Long, itemId: Long): void
+    -toDTO(cart: Cart): CartDTO
+}
+
+class OrderService <<control>> {
+    +OrderService(orderRepo: OrderRepository,\n  cartRepo: CartRepository,\n  productRepo: ProductRepository,\n  paymentGateway: PaymentGateway)
+    +createOrderAndPay(userId: Long,\n  req: CheckoutRequest): OrderConfirmationDTO
+    +fetchUserOrders(userId: Long): List<OrderDTO>
+    +processCancellation(orderId: Long): OrderDTO
+    -toDTO(order: Order): OrderDTO
+}
+
+class AccountService <<control>> {
+    +AccountService(userRepo: UserRepository)
+    +updateUser(userId: Long, req: UserUpdateRequest): UserDTO
+    +getUser(userId: Long): UserDTO
+    -toDTO(user: User): UserDTO
+}
+
+' ─────────────────────────────────────────
+' ENTITY RELATIONS
+' ─────────────────────────────────────────
+
+Order "1" --> "1" OrderState
+Cart "1" --> "*" CartItem
+Order "1" --> "*" OrderItem
+
+' ─────────────────────────────────────────
+' CONTROLLER → SERVICE
+' ─────────────────────────────────────────
+
+CartController ..> CartService : uses
+OrderController ..> OrderService : uses
+UserController ..> AccountService : uses
+
+CartController ..> CartItemRequest : <<uses>>
+CartController ..> CartDTO : <<returns>>
+OrderController ..> CheckoutRequest : <<uses>>
+OrderController ..> OrderConfirmationDTO : <<returns>>
+OrderController ..> OrderDTO : <<returns>>
+UserController ..> UserUpdateRequest : <<uses>>
+UserController ..> UserDTO : <<returns>>
+
+' ─────────────────────────────────────────
+' SERVICE → REPOSITORY
+' ─────────────────────────────────────────
+
+CartService "1" --> "1" CartRepository : -cartRepo
+CartService "1" --> "1" ProductRepository : -productRepo
+
+OrderService "1" --> "1" OrderRepository : -orderRepo
+OrderService "1" --> "1" CartRepository : -cartRepo
+OrderService "1" --> "1" ProductRepository : -productRepo
+OrderService "1" --> "1" PaymentGateway : -paymentGateway
+
+AccountService "1" --> "1" UserRepository : -userRepo
+
+' ─────────────────────────────────────────
+' REPOSITORY → ENTITY
+' ─────────────────────────────────────────
+
+CartRepository ..> Cart : manages
+CartRepository ..> CartItem : manages
+OrderRepository ..> Order : manages
+OrderRepository ..> OrderItem : manages
+UserRepository ..> User : manages
+
+@enduml

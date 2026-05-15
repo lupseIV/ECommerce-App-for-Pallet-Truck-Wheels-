@@ -1,0 +1,133 @@
+@startuml CD-6: Iteration 3 — Backend Class Diagram
+title Iteration 3 — Backend (Spring Boot) Class Structure
+
+skinparam classAttributeIconSize 0
+skinparam class {
+    BackgroundColor White
+    BorderColor Black
+    ArrowColor Black
+}
+skinparam linetype ortho
+
+' ─────────────────────────────────────────
+' ITERATION 1 & 2 REFERENCES
+' ─────────────────────────────────────────
+
+class ProductRepository <<boundary>> {
+    +findAll(): List<Product>
+    +saveAll(products: List): List<Product>
+}
+note top of ProductRepository : Defined in Iteration 1 (CD-1)
+
+class OrderRepository <<boundary>> {
+    +findAll(): List<Order>
+    +findById(id: Long): Optional<Order>
+    +save(order: Order): Order
+}
+note top of OrderRepository : Defined in Iteration 2 (CD-4)
+
+class OrderDTO <<entity>> {
+    +id: Long
+    +status: OrderState
+    +items: List<OrderItemDTO>
+    +total: BigDecimal
+    +createdAt: LocalDateTime
+}
+note top of OrderDTO : Defined in Iteration 2 (CD-4)
+
+' ─────────────────────────────────────────
+' DTOs (Iteration 3)
+' ─────────────────────────────────────────
+
+class HelpDeskRequest <<entity>> {
+    +name: String
+    +email: String
+    +message: String
+}
+
+class ProductStockDTO <<entity>> {
+    +id: Long
+    +name: String
+    +stockQty: int
+    +isLowStock: boolean
+}
+
+class InventoryReportDTO <<entity>> {
+    +products: List<ProductStockDTO>
+    +lowStockWarnings: List<String>
+}
+
+class ImportResultDTO <<entity>> {
+    +successCount: int
+    +errors: List<String>
+}
+
+' ─────────────────────────────────────────
+' EXTERNAL / INFRASTRUCTURE (Iteration 3)
+' ─────────────────────────────────────────
+
+class EmailService <<boundary>> {
+    +sendEmail(to: String,\n  subject: String,\n  body: String): void
+}
+
+' ─────────────────────────────────────────
+' CONTROLLERS (Iteration 3)
+' ─────────────────────────────────────────
+
+class AdminController <<boundary>> {
+    +getInventoryStats(): ResponseEntity<InventoryReportDTO>
+    +importProducts(file: MultipartFile): ResponseEntity<ImportResultDTO>
+    +getAllOrders(): ResponseEntity<List<OrderDTO>>
+    +updateStatus(orderId: Long,\n  status: OrderState): ResponseEntity<OrderDTO>
+}
+
+class SupportController <<boundary>> {
+    +contactSupport(req: HelpDeskRequest): ResponseEntity<Void>
+}
+
+' ─────────────────────────────────────────
+' SERVICES (Iteration 3)
+' ─────────────────────────────────────────
+
+class AdminLogicService <<control>> {
+    +AdminLogicService(productRepo: ProductRepository,\n  orderRepo: OrderRepository)
+    +calculateStockLevels(): InventoryReportDTO
+    +parseAndImport(file: MultipartFile): ImportResultDTO
+    +fetchAllOrders(): List<OrderDTO>
+    +changeOrderStatus(orderId: Long,\n  status: OrderState): OrderDTO
+    -evaluateLowStock(products: List): List<String>
+    -toDTO(order: Order): OrderDTO
+}
+
+class SupportService <<control>> {
+    +SupportService(emailService: EmailService)
+    +processHelpRequest(req: HelpDeskRequest): void
+}
+
+' ─────────────────────────────────────────
+' CONTROLLER → SERVICE
+' ─────────────────────────────────────────
+
+AdminController ..> AdminLogicService : uses
+SupportController ..> SupportService : uses
+
+AdminController ..> InventoryReportDTO : <<returns>>
+AdminController ..> ImportResultDTO : <<returns>>
+AdminController ..> OrderDTO : <<returns>>
+SupportController ..> HelpDeskRequest : <<uses>>
+
+' ─────────────────────────────────────────
+' SERVICE → REPOSITORY / EXTERNAL
+' ─────────────────────────────────────────
+
+AdminLogicService "1" --> "1" ProductRepository : -productRepo
+AdminLogicService "1" --> "1" OrderRepository : -orderRepo
+SupportService "1" --> "1" EmailService : -emailService
+
+' ─────────────────────────────────────────
+' DTO RELATIONS
+' ─────────────────────────────────────────
+
+InventoryReportDTO "1" --> "*" ProductStockDTO
+
+@enduml
