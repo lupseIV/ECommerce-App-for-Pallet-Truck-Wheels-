@@ -1,0 +1,25 @@
+type,name,price,stockQty,material,size,maxLoad,diameter
+WHEEL,Roată Transpalet Poliuretan 160mm,65.50,75,Poliuretan,160mm,800,
+WHEEL,Roată Transpalet Poliuretan 180mm,79.00,50,Poliuretan,180mm,1000,
+WHEEL,Roată Transpalet Poliuretan 200mm,89.99,60,Poliuretan,200mm,1200,
+WHEEL,Roată Transpalet Poliuretan 250mm,129.99,30,Poliuretan,250mm,1500,
+WHEEL,Roată Transpalet Nailon 125mm,38.50,100,Nailon,125mm,600,
+WHEEL,Roată Transpalet Nailon 150mm,49.99,80,Nailon,150mm,800,
+WHEEL,Roată Transpalet Nailon 200mm,69.00,55,Nailon,200mm,1000,
+WHEEL,Roată Transpalet Cauciuc 160mm,58.75,45,Cauciuc,160mm,700,
+WHEEL,Roată Transpalet Cauciuc 200mm,84.50,35,Cauciuc,200mm,1000,
+WHEEL,Roată Transpalet Fontă 200mm,96.00,25,Fontă,200mm,1500,
+WHEEL,Roată Transpalet Fontă 250mm,118.00,15,Fontă,250mm,2000,
+BEARING,Rulment Radial 6203 Oțel,18.50,200,Oțel,17x40x12mm,,40mm
+BEARING,Rulment Radial 6204 Oțel,22.00,180,Oțel,20x47x14mm,,47mm
+BEARING,Rulment Radial 6205 Oțel,27.50,150,Oțel,25x52x15mm,,52mm
+BEARING,Rulment Radial 6206 Oțel,33.00,120,Oțel,30x62x16mm,,62mm
+BEARING,Rulment Radial 6203 Inox,44.00,80,Inox,17x40x12mm,,40mm
+BEARING,Rulment Radial 6204 Inox,58.00,65,Inox,20x47x14mm,,47mm
+BEARING,Rulment Ceramic 6204,97.50,30,Ceramică,20x47x14mm,,47mm
+BEARING,Rulment Ceramic 6205,114.00,20,Ceramică,25x52x15mm,,52mm
+WHEEL,ERR-WHEEL-no-maxload,55.00,10,Poliuretan,200mm,,
+BEARING,ERR-BEARING-no-diameter,25.00,10,Oțel,20x47x14mm,
+ROLA,ERR-invalid-type,45.00,10,Plastic,200mm,800,
+WHEEL,ERR-invalid-price,pret_incorect,10,Poliuretan,200mm,800,
+WHEEL,ERR-too-few-columns,45.00

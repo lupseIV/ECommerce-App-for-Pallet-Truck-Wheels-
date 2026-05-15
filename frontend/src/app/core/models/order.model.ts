@@ -11,6 +11,7 @@ export interface OrderItem {
 
 export interface Order {
   id: number;
+  username: string;
   status: OrderState;
   paymentMethod: string;
   items: OrderItem[];

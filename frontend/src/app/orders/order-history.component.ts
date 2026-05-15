@@ -2,6 +2,7 @@ import { Component, inject, signal, OnInit } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { DecimalPipe, DatePipe } from '@angular/common';
 import { OrderService } from '../core/services/order.service';
+import { ToastService } from '../shared/toast.service';
 import { Order, ORDER_STATE_LABEL, OrderState } from '../core/models/order.model';
 
 @Component({
@@ -274,6 +275,7 @@ import { Order, ORDER_STATE_LABEL, OrderState } from '../core/models/order.model
 export class OrderHistoryComponent implements OnInit {
   private orderService = inject(OrderService);
   private route        = inject(ActivatedRoute);
+  private toast        = inject(ToastService);
 
   readonly orders    = signal<Order[]>([]);
   readonly loading   = signal(true);
@@ -298,10 +300,16 @@ export class OrderHistoryComponent implements OnInit {
     this.expanded.update(cur => cur === id ? null : id);
   }
 
+  // UC-11 Flow §3–4: confirmation dialog; §6: success message
   cancel(orderId: number): void {
+    if (!confirm(`Confirmați anularea comenzii #ORD-${orderId}? Stocul va fi eliberat.`)) return;
     this.orderService.cancelOrder(orderId).subscribe({
       next: updated => {
         this.orders.update(list => list.map(o => o.id === updated.id ? updated : o));
+        this.toast.show(`Comanda #ORD-${orderId} a fost anulată cu succes.`);
+      },
+      error: (err) => {
+        this.toast.show(err.error?.error ?? 'Eroare la anulare.', 'error');
       },
     });
   }

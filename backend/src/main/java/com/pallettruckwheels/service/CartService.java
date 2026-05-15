@@ -78,6 +78,22 @@ public class CartService {
     }
 
     @Transactional
+    public CartDTO updateItemQuantity(String username, Long itemId, int qty) {
+        User user = getUser(username);
+        Cart cart = cartRepository.findByUser(user)
+                .orElseThrow(() -> new NoSuchElementException("Cart not found"));
+        if (qty <= 0) {
+            cart.getItems().removeIf(i -> i.getId().equals(itemId));
+        } else {
+            cart.getItems().stream()
+                    .filter(i -> i.getId().equals(itemId))
+                    .findFirst()
+                    .ifPresent(i -> i.setQuantity(qty));
+        }
+        return toDTO(cartRepository.save(cart));
+    }
+
+    @Transactional
     public void clearCart(String username) {
         User user = getUser(username);
         cartRepository.findByUser(user).ifPresent(cart -> {

@@ -1,8 +1,9 @@
-import { Injectable, signal, computed } from '@angular/core';
+import { Injectable, signal, computed, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Router } from '@angular/router';
 import { Observable, tap } from 'rxjs';
 import { LoginRequest, LoginResponse, UserRole } from '../models/user.model';
+import { ToastService } from '../../shared/toast.service';
 import { environment } from '../../../environments/environment';
 
 const TOKEN_KEY = 'auth_token';
@@ -20,6 +21,8 @@ export class AuthService {
   readonly role = computed(() => this._role());
   readonly username = computed(() => this._username());
   readonly isAdmin = computed(() => this._role() === 'ADMIN');
+
+  private readonly toast = inject(ToastService);
 
   constructor(private http: HttpClient, private router: Router) {}
 
@@ -44,6 +47,7 @@ export class AuthService {
     this._isLoggedIn.set(false);
     this._role.set(null);
     this._username.set(null);
+    this.toast.show('Ați fost deconectat cu succes.', 'info');
     this.router.navigate(['/login']);
   }
 

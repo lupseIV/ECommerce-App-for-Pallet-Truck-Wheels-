@@ -19,3 +19,11 @@ export interface CartItemRequest {
   productId: number;
   qty: number;
 }
+
+export interface GuestCartItem {
+  productId: number;
+  name: string;
+  imageUrl: string | null;
+  quantity: number;
+  unitPrice: number;
+}

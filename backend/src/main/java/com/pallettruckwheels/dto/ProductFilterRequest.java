@@ -14,4 +14,5 @@ public class ProductFilterRequest {
     private String material;
     private Integer maxLoad;
     private String diameter;
+    private String bearingMaterial;  // UC-5: bearing material filter
 }

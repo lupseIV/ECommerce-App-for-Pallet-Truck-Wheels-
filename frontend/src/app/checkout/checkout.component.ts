@@ -62,7 +62,7 @@ import { OrderService } from '../core/services/order.service';
             </div>
           </section>
 
-          <!-- Section 2: Payment -->
+          <!-- Section 2: Payment — UC-12 Process Payment -->
           <section class="form-section">
             <h2 class="form-section__title">
               <span class="form-section__num">2</span> Metodă de Plată
@@ -76,6 +76,34 @@ import { OrderService } from '../core/services/order.service';
               </div>
               <span class="payment-option__icon">💳</span>
             </label>
+
+            <!-- UC-12 Flow §2: card details shown when CARD is selected -->
+            @if (form.value.paymentMethod === 'CARD') {
+              <div class="card-details">
+                <div class="field">
+                  <label class="field__label">NUMĂR CARD</label>
+                  <input class="field__input" formControlName="cardNumber"
+                         placeholder="1234 5678 9012 3456" maxlength="19"
+                         autocomplete="cc-number" inputmode="numeric" />
+                </div>
+                <div class="field-row">
+                  <div class="field">
+                    <label class="field__label">DATA EXPIRARE</label>
+                    <input class="field__input" formControlName="cardExpiry"
+                           placeholder="MM/AA" maxlength="5" autocomplete="cc-exp" />
+                  </div>
+                  <div class="field">
+                    <label class="field__label">CVV</label>
+                    <input class="field__input" formControlName="cardCvv"
+                           placeholder="•••" maxlength="4"
+                           type="password" autocomplete="cc-csc" />
+                  </div>
+                </div>
+                <p class="card-details__note">
+                  🔒 Datele cardului sunt procesate securizat și nu sunt stocate de noi.
+                </p>
+              </div>
+            }
 
             <label class="payment-option" [class.payment-option--active]="form.value.paymentMethod === 'B2B'">
               <input type="radio" formControlName="paymentMethod" value="B2B" />
@@ -260,6 +288,21 @@ import { OrderService } from '../core/services/order.service';
     .payment-option input[type="radio"] { accent-color: var(--rw-orange); }
     .payment-option--active { border-color: var(--rw-orange); background: rgba(232,96,28,.04); }
 
+    /* UC-12: Card details section */
+    .card-details {
+      background: #f8f9fb;
+      border: 1px solid var(--rw-border);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 10px;
+    }
+
+    .card-details__note {
+      font-size: 11px;
+      color: var(--rw-muted);
+      margin: 8px 0 0;
+    }
+
     .payment-option__body { flex: 1; }
     .payment-option__name { display: block; font-size: 14px; font-weight: 600; color: var(--rw-text); }
     .payment-option__desc { display: block; font-size: 12px; color: var(--rw-muted); margin-top: 2px; }
@@ -382,6 +425,10 @@ export class CheckoutComponent implements OnInit {
     county:          ['', Validators.required],
     phone:           ['', Validators.required],
     paymentMethod:   ['CARD' as 'CARD' | 'B2B' | 'RAMBURS', Validators.required],
+    // UC-12: card detail fields (required only when CARD method selected)
+    cardNumber:      [''],
+    cardExpiry:      [''],
+    cardCvv:         [''],
   });
 
   ngOnInit(): void {
@@ -395,6 +442,14 @@ export class CheckoutComponent implements OnInit {
     if (!this.cart.cart() || this.cart.cart()!.items.length === 0) {
       this.errorMessage.set('Coșul este gol. Adăugați produse înainte de a finaliza comanda.');
       return;
+    }
+    // UC-12 Flow §2: validate card details when CARD method is selected
+    if (this.form.value.paymentMethod === 'CARD') {
+      const { cardNumber, cardExpiry, cardCvv } = this.form.value;
+      if (!cardNumber || !cardExpiry || !cardCvv) {
+        this.errorMessage.set('Completați toate datele cardului pentru plata online.');
+        return;
+      }
     }
 
     this.loading.set(true);

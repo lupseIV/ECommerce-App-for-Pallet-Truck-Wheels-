@@ -1,5 +1,5 @@
 import { Component, inject, signal } from '@angular/core';
-import { Router } from '@angular/router';
+import { Router, ActivatedRoute } from '@angular/router';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { AuthService } from '../core/services/auth.service';
@@ -12,7 +12,7 @@ import { AuthService } from '../core/services/auth.service';
     <div class="login-page">
 
       <!-- Left brand panel -->
-      <div class="brand">
+      <div class="brand" aria-hidden="true">
         <div class="brand__top">
           <div class="brand__logo">
             <span class="brand__name">RO-WHEELS<br>INDUSTRIAL</span>
@@ -30,57 +30,101 @@ import { AuthService } from '../core/services/auth.service';
 
       <!-- Right form panel -->
       <div class="panel">
-        <div class="panel__tabs">
-          <button class="tab tab--active">Autentificare</button>
-          <button class="tab" disabled>Cont Nou B2B</button>
+        <div class="panel__tabs" role="tablist">
+          <button class="tab tab--active" role="tab" aria-selected="true">Autentificare</button>
+          <button class="tab" role="tab" aria-selected="false" disabled
+                  aria-label="Cont Nou B2B — în curând disponibil">
+            Cont Nou B2B
+          </button>
         </div>
 
         <div class="panel__body">
           <h1 class="panel__title">Bine ați revenit</h1>
-          <p class="panel__subtitle">
+          <p class="panel__subtitle" id="form-desc">
             Introduceți datele pentru a accesa platforma industrială.
           </p>
 
-          <form [formGroup]="form" (ngSubmit)="submit()">
+          <form
+            [formGroup]="form"
+            (ngSubmit)="submit()"
+            aria-describedby="form-desc"
+            novalidate
+          >
             <div class="field">
-              <label class="field__label">ADRESĂ EMAIL / UTILIZATOR</label>
+              <label class="field__label" for="username">ADRESĂ EMAIL / UTILIZATOR</label>
               <input
+                id="username"
                 class="field__input"
-                [class.field__input--err]="form.controls.username.invalid && form.controls.username.touched"
+                [class.field__input--err]="isInvalid('username')"
                 formControlName="username"
                 autocomplete="username"
                 placeholder="name@company.ro"
+                [attr.aria-invalid]="isInvalid('username')"
+                aria-describedby="username-err"
               />
-              @if (form.controls.username.invalid && form.controls.username.touched) {
-                <span class="field__err">Câmpul este obligatoriu.</span>
-              }
+              <span id="username-err" class="field__err" role="alert"
+                    [class.field__err--visible]="isInvalid('username')">
+                Câmpul este obligatoriu.
+              </span>
             </div>
 
             <div class="field">
               <div class="field__row">
-                <label class="field__label">PAROLĂ</label>
-                <a href="#" class="field__link">Ai uitat parola?</a>
+                <label class="field__label" for="password">PAROLĂ</label>
+                <button
+                  type="button"
+                  class="field__link-btn"
+                  (click)="forgotPassword()"
+                >Ai uitat parola?</button>
               </div>
               <input
+                id="password"
                 class="field__input"
-                [class.field__input--err]="form.controls.password.invalid && form.controls.password.touched"
+                [class.field__input--err]="isInvalid('password')"
                 type="password"
                 formControlName="password"
                 autocomplete="current-password"
                 placeholder="••••••••"
+                [attr.aria-invalid]="isInvalid('password')"
+                aria-describedby="password-err"
               />
-              @if (form.controls.password.invalid && form.controls.password.touched) {
-                <span class="field__err">Câmpul este obligatoriu.</span>
-              }
+              <span id="password-err" class="field__err" role="alert"
+                    [class.field__err--visible]="isInvalid('password')">
+                Câmpul este obligatoriu.
+              </span>
             </div>
 
-            @if (errorMessage()) {
-              <div class="alert">{{ errorMessage() }}</div>
+            @if (isLocked()) {
+              <!-- UC-2.E2: Account locked — terminate use case, no retry -->
+              <div class="alert alert--locked" role="alert" aria-live="assertive">
+                <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                  <rect x="3" y="11" width="18" height="11" rx="2"/>
+                  <path d="M7 11V7a5 5 0 0110 0v4"/>
+                </svg>
+                <div>
+                  <strong>Cont blocat temporar</strong>
+                  <p>{{ errorMessage() }}</p>
+                  <p>Contactați suportul la suport&#64;ro-wheels.ro pentru deblocare.</p>
+                </div>
+              </div>
+            } @else if (errorMessage()) {
+              <!-- UC-2.E1: Invalid credentials -->
+              <div class="alert" role="alert" aria-live="assertive">
+                <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                  <circle cx="12" cy="12" r="10"/>
+                  <line x1="12" y1="8" x2="12" y2="12"/>
+                  <line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+                {{ errorMessage() }}
+              </div>
             }
 
-            <button class="btn-cta" type="submit" [disabled]="loading()">
+            <button class="btn-cta" type="submit" [disabled]="loading() || isLocked()">
               @if (loading()) {
-                <mat-spinner diameter="20" />
+                <mat-spinner diameter="18" />
+                <span>Se autentifică…</span>
               } @else {
                 ACCESEAZĂ CONTUL
               }
@@ -121,8 +165,7 @@ import { AuthService } from '../core/services/auth.service';
     }
 
     .brand__top { position: relative; }
-
-    .brand__logo { display: flex; flex-direction: column; gap: 4px; }
+    .brand__logo { display: flex; flex-direction: column; gap: var(--sp-1); }
 
     .brand__name {
       color: #fff;
@@ -137,7 +180,7 @@ import { AuthService } from '../core/services/auth.service';
       width: 36px;
       height: 3px;
       background: var(--rw-orange);
-      margin-top: 8px;
+      margin-top: var(--sp-2);
     }
 
     .brand__quote {
@@ -146,7 +189,7 @@ import { AuthService } from '../core/services/auth.service';
       display: flex;
       flex-direction: column;
       justify-content: flex-end;
-      padding-bottom: 20px;
+      padding-bottom: var(--sp-5);
     }
 
     .brand__quote p {
@@ -157,10 +200,7 @@ import { AuthService } from '../core/services/auth.service';
       margin: 0 0 14px;
     }
 
-    .brand__quote strong {
-      color: var(--rw-orange);
-      font-style: normal;
-    }
+    .brand__quote strong { color: var(--rw-orange); font-style: normal; }
 
     .brand__sub {
       color: rgba(255,255,255,.28);
@@ -201,7 +241,7 @@ import { AuthService } from '../core/services/auth.service';
       color: var(--rw-muted);
       cursor: pointer;
       font-family: inherit;
-      transition: color .15s, border-color .15s;
+      transition: color var(--t-fast), border-color var(--t-fast);
     }
 
     .tab--active {
@@ -222,54 +262,61 @@ import { AuthService } from '../core/services/auth.service';
       font-size: 26px;
       font-weight: 700;
       color: var(--rw-text);
-      margin: 0 0 8px;
+      margin: 0 0 var(--sp-2);
     }
 
     .panel__subtitle {
       font-size: 14px;
       color: var(--rw-muted);
       margin: 0 0 36px;
-      line-height: 1.55;
+      line-height: 1.6;
     }
 
     /* ── Fields ── */
-    .field { margin-bottom: 22px; }
+    .field { margin-bottom: var(--sp-5); }
 
     .field__label {
       display: block;
-      font-size: 10px;
+      font-size: 11px;
       font-weight: 700;
-      letter-spacing: 1px;
+      letter-spacing: 0.9px;
       color: var(--rw-muted);
-      margin-bottom: 6px;
+      margin-bottom: var(--sp-2);
+      text-transform: uppercase;
     }
 
     .field__row {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 6px;
+      margin-bottom: var(--sp-2);
     }
 
-    .field__link {
+    /* Forgot password — button, not link, as it doesn't navigate */
+    .field__link-btn {
+      background: none;
+      border: none;
       font-size: 12px;
       color: var(--rw-orange);
-      text-decoration: none;
+      cursor: pointer;
+      font-family: inherit;
+      padding: 0;
+      transition: text-decoration var(--t-fast);
     }
 
-    .field__link:hover { text-decoration: underline; }
+    .field__link-btn:hover { text-decoration: underline; }
 
     .field__input {
       width: 100%;
-      padding: 11px 16px;
+      padding: 11px var(--sp-4);
       border: 1px solid var(--rw-border);
-      border-radius: 6px;
+      border-radius: var(--r-md);
       font-size: 14px;
       color: var(--rw-text);
       background: #fff;
       outline: none;
       font-family: inherit;
-      transition: border-color .15s, box-shadow .15s;
+      transition: border-color var(--t-fast), box-shadow var(--t-fast);
     }
 
     .field__input:focus {
@@ -277,24 +324,49 @@ import { AuthService } from '../core/services/auth.service';
       box-shadow: 0 0 0 3px rgba(232,96,28,.12);
     }
 
-    .field__input--err { border-color: #ef4444; }
+    .field__input--err { border-color: var(--rw-error); }
+    .field__input--err:focus { box-shadow: 0 0 0 3px rgba(220,38,38,.12); }
 
     .field__err {
       display: block;
       font-size: 12px;
-      color: #ef4444;
-      margin-top: 5px;
+      color: var(--rw-error);
+      margin-top: var(--sp-1);
+      /* Hidden by default to avoid layout shift */
+      visibility: hidden;
+      height: 0;
+      overflow: hidden;
     }
 
+    .field__err--visible {
+      visibility: visible;
+      height: auto;
+    }
+
+    /* ── Error alert ── */
     .alert {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--sp-2);
       background: #fef2f2;
       border: 1px solid #fecaca;
-      color: #dc2626;
-      border-radius: 6px;
-      padding: 10px 14px;
+      color: var(--rw-error);
+      border-radius: var(--r-md);
+      padding: 12px 14px;
       font-size: 13px;
-      margin-bottom: 18px;
+      margin-bottom: var(--sp-5);
+      line-height: 1.5;
     }
+
+    /* UC-2.E2 — distinct locked state */
+    .alert--locked {
+      background: #fdf4ff;
+      border-color: #e9d5ff;
+      color: #6b21a8;
+    }
+
+    .alert--locked strong { display: block; margin-bottom: 4px; }
+    .alert--locked p { margin: 2px 0; font-size: 12px; }
 
     /* ── CTA button ── */
     .btn-cta {
@@ -303,7 +375,7 @@ import { AuthService } from '../core/services/auth.service';
       background: var(--rw-orange);
       color: #fff;
       border: none;
-      border-radius: 6px;
+      border-radius: var(--r-md);
       font-size: 13px;
       font-weight: 700;
       letter-spacing: 1.2px;
@@ -312,9 +384,9 @@ import { AuthService } from '../core/services/auth.service';
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 8px;
-      transition: background .15s;
-      margin-top: 4px;
+      gap: var(--sp-2);
+      transition: background var(--t-fast), opacity var(--t-fast);
+      margin-top: var(--sp-1);
     }
 
     .btn-cta:hover:not(:disabled) { background: var(--rw-orange-h); }
@@ -322,34 +394,63 @@ import { AuthService } from '../core/services/auth.service';
 
     @media (max-width: 720px) {
       .brand { display: none; }
-      .panel__body { padding: 32px 24px; }
-      .panel__tabs { padding: 0 24px; }
+      .panel__body { padding: 32px var(--sp-6); }
+      .panel__tabs { padding: 0 var(--sp-6); }
     }
   `],
 })
 export class LoginComponent {
   private readonly authService = inject(AuthService);
-  private readonly router     = inject(Router);
-  private readonly fb         = inject(FormBuilder);
+  private readonly router      = inject(Router);
+  private readonly route       = inject(ActivatedRoute);
+  private readonly fb          = inject(FormBuilder);
 
   readonly loading      = signal(false);
   readonly errorMessage = signal<string | null>(null);
+  readonly isLocked     = signal(false);
 
   readonly form = this.fb.group({
     username: ['', Validators.required],
     password: ['', Validators.required],
   });
 
+  isInvalid(field: 'username' | 'password'): boolean {
+    const ctrl = this.form.controls[field];
+    return ctrl.invalid && ctrl.touched;
+  }
+
+  forgotPassword(): void {
+    alert('Contactați administratorul la suport@ro-wheels.ro pentru resetarea parolei.');
+  }
+
   submit(): void {
     if (this.form.invalid) { this.form.markAllAsTouched(); return; }
     this.loading.set(true);
     this.errorMessage.set(null);
+    this.isLocked.set(false);
     this.authService
       .login({ username: this.form.value.username!, password: this.form.value.password! })
       .subscribe({
-        next: () => this.router.navigate(['/products']),
+        next: () => {
+          // UC-9→UC-2 include: honour returnUrl (e.g. /checkout) set by authGuard
+          const returnUrl = this.route.snapshot.queryParamMap.get('returnUrl');
+          if (returnUrl) {
+            this.router.navigateByUrl(returnUrl);
+          } else {
+            // UC-2 Flow §6: role-appropriate redirect
+            const destination = this.authService.isAdmin() ? '/admin' : '/products';
+            this.router.navigate([destination]);
+          }
+        },
         error: (err) => {
-          this.errorMessage.set(err.error?.error ?? 'Autentificare eșuată. Vă rugăm să încercați din nou.');
+          // UC-2.E2: HTTP 422 = account locked — distinct UI treatment, no retry
+          if (err.status === 422) {
+            this.isLocked.set(true);
+            this.errorMessage.set(err.error?.error ?? 'Contul este blocat temporar.');
+            this.form.disable();
+          } else {
+            this.errorMessage.set(err.error?.error ?? 'Autentificare eșuată. Vă rugăm să încercați din nou.');
+          }
           this.loading.set(false);
         },
       });

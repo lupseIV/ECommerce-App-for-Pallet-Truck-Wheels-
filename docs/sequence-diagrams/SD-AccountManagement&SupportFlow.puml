@@ -9,7 +9,8 @@ participant "ContactComponent\n(Angular)" as CONTACT_UI
 participant "OrderService\n(Angular)" as FE_ORDER
 participant "AccountService\n(Angular)" as FE_ACCT
 participant "SupportService\n(Angular)" as FE_SUPPORT
-participant "HTTP" as HTTP
+participant "ToastService\n(Angular)" as TOAST
+participant "HTTP / JwtAuthFilter" as HTTP
 participant "OrderController\n(Spring)" as ORDER_CTRL
 participant "UserController\n(Spring)" as USER_CTRL
 participant "SupportController\n(Spring)" as SUPPORT_CTRL
@@ -18,75 +19,176 @@ participant "AccountService\n(Spring)" as BE_ACCT
 participant "SupportService\n(Spring)" as BE_SUPPORT
 participant "OrderRepository" as ORDER_REPO
 participant "UserRepository" as USER_REPO
+participant "SupportTicketRepository" as TICKET_REPO
 database "PostgreSQL" as DB
-participant "EmailService" as EMAIL
+participant "EmailService\n(Spring)" as EMAIL
 
+note over ORDER_UI, EMAIL
+  All routes in this diagram are protected by authGuard.
+  JwtAuthFilter validates the Bearer token on every request.
+  Unauthenticated access redirects to /login?returnUrl=<path>.
+end note
+
+' ═══════════════════════════════════════════════════════════
 == UC-10: View Orders ==
-Client -> ORDER_UI: navigate to /orders
+' ═══════════════════════════════════════════════════════════
+Client -> ORDER_UI: navigates to /orders
 ORDER_UI -> FE_ORDER: getMyOrders()
+activate FE_ORDER
 FE_ORDER -> HTTP: GET /api/orders/me
-HTTP -> ORDER_CTRL: getMyOrders()
-ORDER_CTRL -> BE_ORDER: fetchUserOrders(userId)
-BE_ORDER -> ORDER_REPO: findByUserId(userId)
-ORDER_REPO -> DB: SELECT * FROM orders WHERE user_id = ?
-DB --> ORDER_REPO: List<Order> rows
+HTTP -> ORDER_CTRL: getMyOrders(@Principal)
+ORDER_CTRL -> BE_ORDER: fetchUserOrders(username)
+BE_ORDER -> ORDER_REPO: findByUserOrderByCreatedAtDesc(user)
+ORDER_REPO -> DB: SELECT o.*, oi.* FROM orders o\nJOIN order_items oi ON oi.order_id = o.id\nWHERE o.user_id = ?\nORDER BY o.created_at DESC
+DB --> ORDER_REPO: List<Order> rows (newest first)
 ORDER_REPO --> BE_ORDER: List<Order>
 BE_ORDER --> ORDER_CTRL: List<OrderDTO>
 ORDER_CTRL --> HTTP: 200 OK List<OrderDTO>
 HTTP --> FE_ORDER: List<OrderDTO>
-FE_ORDER --> ORDER_UI: render order history (Ongoing / Finished)
+FE_ORDER --> ORDER_UI: orders signal populated
+deactivate FE_ORDER
 
-== UC-11: Cancel Order ==
-opt Cancel Active Order
-    Client -> ORDER_UI: clicks "Cancel Order"
-    ORDER_UI -> FE_ORDER: cancelOrder(orderId)
-    FE_ORDER -> HTTP: PUT /api/orders/{orderId}/cancel
-    HTTP -> ORDER_CTRL: cancelOrder(orderId)
-    ORDER_CTRL -> BE_ORDER: processCancellation(orderId)
-    BE_ORDER -> ORDER_REPO: findById(orderId)
-    ORDER_REPO -> DB: SELECT * FROM orders WHERE id = ?
-    DB --> ORDER_REPO: Order row
-    ORDER_REPO --> BE_ORDER: Order entity
-    BE_ORDER -> ORDER_REPO: save(order with CANCELED + restock)
-    ORDER_REPO -> DB: UPDATE orders SET status = 'CANCELED' WHERE id = ?\nUPDATE products SET stock = stock + qty
-    DB --> ORDER_REPO: rows updated
-    ORDER_REPO --> BE_ORDER: Order entity
-    BE_ORDER --> ORDER_CTRL: OrderDTO (CANCELED)
-    ORDER_CTRL --> HTTP: 200 OK {OrderDTO}
-    HTTP --> FE_ORDER: success
-    FE_ORDER --> ORDER_UI: show cancellation success & update list
+ORDER_UI --> Client: table with #ORD-{id}, date, status badge,\ntotal, "Detalii" button, "Anulează" button\n(Anulează only visible for REGISTERED orders)
+
+alt Client clicks "Detalii"
+    note right of ORDER_UI
+      No extra HTTP call — order items are
+      already included in the List<OrderDTO>
+      loaded above. The row simply expands
+      in-place (expanded signal toggles).
+    end note
+    ORDER_UI --> Client: expanded row shows item list\n(name, qty, subtotal) + payment method
 end
 
+' ═══════════════════════════════════════════════════════════
+== UC-11: Cancel Order ==
+' ═══════════════════════════════════════════════════════════
+opt Client selects a REGISTERED order and clicks "Anulează"
+    note right of ORDER_UI
+      PRE-2: "Anulează" button only rendered
+      when order.status === 'REGISTERED'.
+      CONFIRMED / ON_GOING / DELIVERED
+      orders cannot be cancelled from UI.
+    end note
+
+    ORDER_UI -> ORDER_UI: window.confirm(\n"Confirmați anularea comenzii #ORD-{id}?\nStocul va fi eliberat.")
+
+    alt Client cancels dialog
+        ORDER_UI --> Client: no change
+    else Client confirms (UC-11.4)
+        ORDER_UI -> FE_ORDER: cancelOrder(orderId)
+        activate FE_ORDER
+        FE_ORDER -> HTTP: PUT /api/orders/{orderId}/cancel
+        HTTP -> ORDER_CTRL: cancelOrder(@Principal, orderId)
+        ORDER_CTRL -> BE_ORDER: processCancellation(username, orderId)
+
+        BE_ORDER -> ORDER_REPO: findById(orderId)
+        ORDER_REPO -> DB: SELECT * FROM orders WHERE id = ?
+        DB --> ORDER_REPO: Order row
+        ORDER_REPO --> BE_ORDER: Order entity
+
+        BE_ORDER -> BE_ORDER: verify order.user == caller\nverify order.status == REGISTERED
+
+        alt Order already CONFIRMED / ON_GOING / DELIVERED (422)
+            BE_ORDER --> ORDER_CTRL: throws IllegalStateException\n"Only REGISTERED orders can be cancelled"
+            ORDER_CTRL --> HTTP: 422 {error: "Only REGISTERED orders can be cancelled"}
+            HTTP --> FE_ORDER: 422 error
+            FE_ORDER --> ORDER_UI: error propagated
+            ORDER_UI -> TOAST: show("Eroare la anulare.", 'error')
+        else Status is REGISTERED — proceed
+            loop for each OrderItem (restock)
+                BE_ORDER -> PROD_REPO: save(product — stockQty += qty)
+                PROD_REPO -> DB: UPDATE products SET stock_qty = stock_qty + ?\nWHERE id = ?
+            end
+            BE_ORDER -> ORDER_REPO: save(order — status = CANCELED)
+            ORDER_REPO -> DB: UPDATE orders SET status = 'CANCELED'\nWHERE id = ?
+            DB --> ORDER_REPO: row updated
+            ORDER_REPO --> BE_ORDER: Order entity (CANCELED)
+            BE_ORDER --> ORDER_CTRL: OrderDTO (status: CANCELED)
+            ORDER_CTRL --> HTTP: 200 OK {OrderDTO}
+            HTTP --> FE_ORDER: OrderDTO (CANCELED)
+            FE_ORDER -> ORDER_UI: orders.update — replace order in list\nwith updated status
+            deactivate FE_ORDER
+            ORDER_UI -> TOAST: show("Comanda #ORD-{id} anulată cu succes.", 'success')
+            ORDER_UI --> Client: status badge changes to "Anulată"\n"Anulează" button disappears
+        end
+    end
+end
+
+' ═══════════════════════════════════════════════════════════
 == UC-13: Update Personal Data ==
-opt Update Profile
-    Client -> PROFILE_UI: updates profile info & submits
-    PROFILE_UI -> FE_ACCT: updateProfile(UserUpdateRequest)
-    FE_ACCT -> HTTP: PUT /api/users/profile
-    HTTP -> USER_CTRL: updateProfile(UserUpdateRequest)
-    USER_CTRL -> BE_ACCT: updateUser(userId, req)
+' ═══════════════════════════════════════════════════════════
+Client -> PROFILE_UI: navigates to /profile
+
+note right of PROFILE_UI: ngOnInit — load current profile data
+PROFILE_UI -> FE_ACCT: getProfile()
+activate FE_ACCT
+FE_ACCT -> HTTP: GET /api/users/profile
+HTTP -> USER_CTRL: getProfile(@Principal)
+USER_CTRL -> BE_ACCT: getUser(username)
+BE_ACCT -> USER_REPO: findByUsername(username)
+USER_REPO -> DB: SELECT * FROM users WHERE username = ?
+DB --> USER_REPO: User row
+USER_REPO --> BE_ACCT: User entity
+BE_ACCT --> USER_CTRL: UserDTO {username, email, role, billingAddress}
+USER_CTRL --> HTTP: 200 OK {UserDTO}
+HTTP --> FE_ACCT: UserDTO
+FE_ACCT --> PROFILE_UI: profile signal set\nform.patchValue({email, billingAddress})
+deactivate FE_ACCT
+PROFILE_UI --> Client: shows avatar (initials), username, email,\nrole badge, pre-filled edit fields
+
+opt Client updates fields & clicks "Salvează Modificările"
+    PROFILE_UI -> FE_ACCT: updateProfile({email?, billingAddress?})
+    activate FE_ACCT
+    FE_ACCT -> HTTP: PUT /api/users/profile\n{email?, billingAddress?}
+    HTTP -> USER_CTRL: updateProfile(@Principal, UserUpdateRequest)
+    USER_CTRL -> BE_ACCT: updateUser(username, req)
     BE_ACCT -> USER_REPO: save(updatedUser)
-    USER_REPO -> DB: UPDATE users SET email = ?, billing_address = ? WHERE id = ?
+    USER_REPO -> DB: UPDATE users\nSET email = ?, billing_address = ?\nWHERE username = ?
     DB --> USER_REPO: row updated
     USER_REPO --> BE_ACCT: User entity
-    BE_ACCT --> USER_CTRL: UserDTO
+    BE_ACCT --> USER_CTRL: UserDTO (updated)
     USER_CTRL --> HTTP: 200 OK {UserDTO}
     HTTP --> FE_ACCT: UserDTO
-    FE_ACCT --> PROFILE_UI: show profile updated message
+    FE_ACCT --> PROFILE_UI: profile signal updated\nsuccessMessage = "Datele au fost actualizate cu succes."
+    deactivate FE_ACCT
+    PROFILE_UI --> Client: success alert rendered below header
 end
 
+' ═══════════════════════════════════════════════════════════
 == UC-14: Contact Help Desk ==
-opt Request Custom Wheels
-    Client -> CONTACT_UI: submits Contact form
-    CONTACT_UI -> FE_SUPPORT: sendMessage(HelpDeskRequest)
+' ═══════════════════════════════════════════════════════════
+note over CONTACT_UI
+  /contact has no authGuard — accessible to guests.
+end note
+
+Client -> CONTACT_UI: navigates to /contact
+CONTACT_UI --> Client: displays contact form\n(name, email, message textarea)
+
+opt Client submits form
+    CONTACT_UI -> FE_SUPPORT: sendMessage({name, email, message})
+    activate FE_SUPPORT
     FE_SUPPORT -> HTTP: POST /api/support/contact\n{name, email, message}
     HTTP -> SUPPORT_CTRL: contactSupport(HelpDeskRequest)
     SUPPORT_CTRL -> BE_SUPPORT: processHelpRequest(req)
-    BE_SUPPORT -> EMAIL: sendEmail(adminQueue, messageDetails)
-    EMAIL --> BE_SUPPORT: EmailSentEvent
+
+    BE_SUPPORT -> TICKET_REPO: save(new SupportTicket)
+    TICKET_REPO -> DB: INSERT INTO support_tickets\n(name, email, message, resolved=false)
+    DB --> TICKET_REPO: ticket persisted
+
+    BE_SUPPORT -> EMAIL: notifyAdmin(\n  "Solicitare nouă helpdesk de la {name}",\n  "De la: {name} <{email}>\n\n{message}")
+    note right of EMAIL
+      EmailService logs to console in dev.
+      Plug in SMTP provider for production.
+    end note
+    EMAIL --> BE_SUPPORT: logged (void)
+
     BE_SUPPORT --> SUPPORT_CTRL: void (success)
     SUPPORT_CTRL --> HTTP: 200 OK
     HTTP --> FE_SUPPORT: success
-    FE_SUPPORT --> CONTACT_UI: show message sent confirmation
+    FE_SUPPORT --> CONTACT_UI: success signal = true
+    deactivate FE_SUPPORT
+    CONTACT_UI --> Client: form replaced by success message:\n"Mesajul dvs. a fost trimis. Vă vom răspunde în curând!"
 end
 
 @enduml

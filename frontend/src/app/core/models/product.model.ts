@@ -26,4 +26,5 @@ export interface ProductFilter {
   material?: string;
   maxLoad?: number;
   diameter?: string;
+  bearingMaterial?: string;  // UC-5: required filter criterion
 }

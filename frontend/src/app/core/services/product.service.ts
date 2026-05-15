@@ -17,8 +17,9 @@ export class ProductService {
       if (filter.type) params = params.set('type', filter.type);
       if (filter.size) params = params.set('size', filter.size);
       if (filter.material) params = params.set('material', filter.material);
-      if (filter.maxLoad != null) params = params.set('maxLoad', filter.maxLoad.toString());
-      if (filter.diameter) params = params.set('diameter', filter.diameter);
+      if (filter.maxLoad != null)    params = params.set('maxLoad', filter.maxLoad.toString());
+      if (filter.diameter)           params = params.set('diameter', filter.diameter);
+      if (filter.bearingMaterial)    params = params.set('bearingMaterial', filter.bearingMaterial);
     }
     return this.http.get<Product[]>(this.apiUrl, { params });
   }

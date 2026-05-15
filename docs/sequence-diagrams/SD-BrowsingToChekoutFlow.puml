@@ -1,113 +1,300 @@
 @startuml SD-Complete-Shopping-Journey
-title Core Shopping Journey (Browsing to Checkout) — Iteration 2
+title Core Shopping Journey (Browsing → Checkout) — Iteration 3
 
 actor Client
 
+participant "LoginComponent\n(Angular)" as LOGIN_UI
+participant "authGuard\n(Angular)" as GUARD
+participant "AuthService\n(Angular)" as FE_AUTH
 participant "ProductListComponent\n(Angular)" as PROD_UI
-participant "CartComponent\n(Angular)" as CART_UI
+participant "CartDrawerComponent\n(Angular)" as CART_UI
 participant "CheckoutComponent\n(Angular)" as CHECKOUT_UI
 participant "CartService\n(Angular)" as FE_CART
+participant "ToastService\n(Angular)" as TOAST
 participant "OrderService\n(Angular)" as FE_ORDER
-participant "HTTP" as HTTP
+participant "localStorage" as LS
+participant "HTTP / JwtAuthFilter" as HTTP
+participant "AuthController\n(Spring)" as AUTH_CTRL
 participant "CartController\n(Spring)" as CART_CTRL
 participant "OrderController\n(Spring)" as ORDER_CTRL
+participant "AuthService\n(Spring)" as BE_AUTH
 participant "CartService\n(Spring)" as BE_CART
 participant "OrderService\n(Spring)" as BE_ORDER
+participant "ProductRepository" as PROD_REPO
 participant "CartRepository" as CART_REPO
 participant "OrderRepository" as ORDER_REPO
 database "PostgreSQL" as DB
-participant "PaymentGateway" as PG
 
-== UC-4 & UC-5: View & Filter Products ==
-Client -> PROD_UI: navigates to catalog & applies filters
-note over PROD_UI, DB: Handled via ProductController → ProductService → ProductRepository.\nSee CD-1 & CD-2 (Iteration 1) for full class structure.
-PROD_UI --> Client: displays filtered products
+' ═══════════════════════════════════════════════════════════
+== UC-2: Login (JWT) ==
+' ═══════════════════════════════════════════════════════════
+Client -> LOGIN_UI: navigates to /login
+Client -> LOGIN_UI: enters username + password → submit
+LOGIN_UI -> FE_AUTH: login({username, password})
+FE_AUTH -> HTTP: POST /api/auth/login\n{username, password}
+HTTP -> AUTH_CTRL: login(LoginRequest)
+AUTH_CTRL -> BE_AUTH: authenticate(request)
+BE_AUTH -> BE_AUTH: check isLocked()
 
-== UC-6: Add Product to Cart ==
-Client -> PROD_UI: clicks "Add to Cart"
-PROD_UI -> FE_CART: addToCart(productId, qty=1)
-activate FE_CART
-FE_CART -> HTTP: POST /api/cart/items\n{productId, qty}
-activate HTTP
-HTTP -> CART_CTRL: addItem(CartItemRequest)
-activate CART_CTRL
-CART_CTRL -> BE_CART: addItemToCart(userId, req)
-activate BE_CART
-BE_CART -> CART_REPO: save(cartItem)
-activate CART_REPO
-CART_REPO -> DB: INSERT INTO cart_items ...
-DB --> CART_REPO: row inserted
-CART_REPO --> BE_CART: CartItem entity
-deactivate CART_REPO
-BE_CART --> CART_CTRL: CartDTO
-deactivate BE_CART
-CART_CTRL --> HTTP: 200 OK {CartDTO}
-deactivate CART_CTRL
-HTTP --> FE_CART: CartDTO response
-deactivate HTTP
-FE_CART --> PROD_UI: update cart item count
-deactivate FE_CART
+alt Account locked (UC-2.E2 — HTTP 422)
+    BE_AUTH --> AUTH_CTRL: throws IllegalStateException\n"Account locked. Try again after…"
+    AUTH_CTRL --> HTTP: 422 {error: "Account locked…"}
+    HTTP --> FE_AUTH: 422 error
+    FE_AUTH --> LOGIN_UI: isLocked = true\nform.disable()\nshow distinct locked banner
+    LOGIN_UI --> Client: [Locked] distinct purple banner shown,\nsubmit button disabled — use case terminates
+else Invalid credentials (UC-2.E1 — HTTP 401)
+    BE_AUTH --> AUTH_CTRL: throws IllegalArgumentException
+    AUTH_CTRL --> HTTP: 401 {error: "Invalid username or password"}
+    HTTP --> FE_AUTH: 401 error
+    FE_AUTH --> LOGIN_UI: errorMessage set,\nform stays enabled (user can retry)
+    note right of LOGIN_UI: After 5 failed attempts the\nbackend auto-locks the account;\nnext attempt gets E2 path
+else Valid credentials
+    BE_AUTH -> BE_AUTH: reset failedLoginAttempts, generate JWT
+    BE_AUTH --> AUTH_CTRL: LoginResponse {token, role, username}
+    AUTH_CTRL --> HTTP: 200 OK {token, role, username}
+    HTTP --> FE_AUTH: LoginResponse
+    FE_AUTH -> LS: store token, role, username
+    FE_AUTH --> LOGIN_UI: isLoggedIn = true
 
-== UC-7 & UC-8: Review & Modify Cart ==
-Client -> CART_UI: opens Shopping Cart
-CART_UI -> FE_CART: getCart()
-FE_CART -> HTTP: GET /api/cart
-HTTP -> CART_CTRL: getCart()
-CART_CTRL -> BE_CART: getClientCart(userId)
-BE_CART -> CART_REPO: findByUserId(userId)
-CART_REPO -> DB: SELECT * FROM cart_items WHERE user_id = ?
-DB --> CART_REPO: cart item rows
-CART_REPO --> BE_CART: Cart entity
-BE_CART --> CART_CTRL: CartDTO
-CART_CTRL --> HTTP: 200 OK {CartDTO}
-HTTP --> FE_CART: CartDTO
-FE_CART --> CART_UI: render cart details
-
-opt Remove Item
-    Client -> CART_UI: clicks "Remove" on item
-    CART_UI -> FE_CART: removeItem(itemId)
-    FE_CART -> HTTP: DELETE /api/cart/items/{itemId}
-    HTTP -> CART_CTRL: removeItem(itemId)
-    CART_CTRL -> BE_CART: removeItem(userId, itemId)
-    BE_CART -> CART_REPO: deleteById(itemId)
-    CART_REPO -> DB: DELETE FROM cart_items WHERE id = ?
-    DB --> CART_REPO: row deleted
-    BE_CART --> CART_CTRL: void
-    CART_CTRL --> HTTP: 204 No Content
-    HTTP --> FE_CART: success
-    FE_CART --> CART_UI: update cart view & total
+    alt returnUrl present (came from authGuard redirect)
+        LOGIN_UI -> LOGIN_UI: navigateByUrl(returnUrl)\n(e.g. /checkout)
+    else normal login
+        alt Admin role
+            LOGIN_UI -> LOGIN_UI: navigate to /admin
+        else Client role
+            LOGIN_UI -> LOGIN_UI: navigate to /products
+        end
+    end
 end
 
-== UC-9 & UC-12: Checkout & Payment ==
-Client -> CHECKOUT_UI: clicks "Checkout Order"
-CHECKOUT_UI -> FE_ORDER: checkout(CheckoutRequest)
-activate FE_ORDER
-FE_ORDER -> HTTP: POST /api/orders/checkout\n{cartId, paymentDetails}
-activate HTTP
-HTTP -> ORDER_CTRL: processCheckout(CheckoutRequest)
-activate ORDER_CTRL
-ORDER_CTRL -> BE_ORDER: createOrderAndPay(userId, req)
-activate BE_ORDER
-BE_ORDER -> CART_REPO: findByUserId(userId)
-CART_REPO --> BE_ORDER: Cart entity (items + totals)
-BE_ORDER -> PG: processPayment(paymentDetails, amount)
-activate PG
-PG --> BE_ORDER: PaymentResponse (authorized)
-deactivate PG
-BE_ORDER -> ORDER_REPO: save(newOrder)
-activate ORDER_REPO
-ORDER_REPO -> DB: INSERT INTO orders + order_items\nUPDATE products SET stock = stock - qty\nDELETE FROM cart_items WHERE user_id = ?
-DB --> ORDER_REPO: transaction committed
-ORDER_REPO --> BE_ORDER: Order entity
-deactivate ORDER_REPO
-BE_ORDER --> ORDER_CTRL: OrderConfirmationDTO
-deactivate BE_ORDER
-ORDER_CTRL --> HTTP: 200 OK {OrderConfirmationDTO}
-deactivate ORDER_CTRL
-HTTP --> FE_ORDER: OrderConfirmationDTO
-deactivate HTTP
-FE_ORDER --> CHECKOUT_UI: navigate to /orders/success
-deactivate FE_ORDER
-CHECKOUT_UI --> Client: displays order success message
+' ═══════════════════════════════════════════════════════════
+== UC-4 & UC-5: View & Filter Products ==
+' ═══════════════════════════════════════════════════════════
+Client -> PROD_UI: navigates to /products
+note over PROD_UI, DB
+  ProductListComponent calls GET /api/products?[name][type][size]
+  [material][maxLoad][diameter][bearingMaterial]
+  → ProductController → ProductService.getFilteredProducts()
+  → buildSpecification() (all six filter fields now handled)
+  → ProductRepository.findAll(spec) → List<ProductDTO>
+  Full class detail in CD-1 / CD-6.
+end note
+PROD_UI --> Client: renders product grid with name, type, size,\nmaterial, price, stock pill, and image (UC-4)\nFilters in left sidebar apply debounced (300ms) (UC-5)
+
+' ═══════════════════════════════════════════════════════════
+== UC-6: Add Product to Cart ==
+' ═══════════════════════════════════════════════════════════
+Client -> PROD_UI: clicks cart button on in-stock product
+PROD_UI -> FE_CART: addToCart({productId, qty:1, name, price, imageUrl})
+activate FE_CART
+note right of PROD_UI: Button is disabled + "EPUIZAT" badge\nwhen stockQty === 0 — UC-6.E1 prevented at UI level
+
+alt Guest (not logged in)
+    FE_CART -> LS: read ptw_guest_cart
+    FE_CART -> FE_CART: upsert item (qty++) or push new entry
+    FE_CART -> LS: write ptw_guest_cart (JSON)
+    FE_CART --> PROD_UI: cart signal updates (computed from localStorage)
+else Authenticated
+    FE_CART -> HTTP: POST /api/cart/items\n{productId, qty}
+    activate HTTP
+    HTTP -> CART_CTRL: addItem(@Principal, CartItemRequest)
+    activate CART_CTRL
+    CART_CTRL -> BE_CART: addItemToCart(username, req)
+    activate BE_CART
+    BE_CART -> CART_REPO: findByUser / create cart if absent
+    BE_CART -> PROD_REPO: findById(productId) — validate stock
+    BE_CART -> CART_REPO: save(cartItem)
+    CART_REPO -> DB: INSERT / UPDATE cart_items
+    DB --> CART_REPO: persisted
+    CART_REPO --> BE_CART: Cart entity
+    BE_CART --> CART_CTRL: CartDTO
+    deactivate BE_CART
+    CART_CTRL --> HTTP: 200 OK {CartDTO}
+    deactivate CART_CTRL
+    HTTP --> FE_CART: CartDTO
+    deactivate HTTP
+    FE_CART -> FE_CART: _serverCart.set(CartDTO)
+end
+
+FE_CART --> PROD_UI: itemCount updates on navbar badge
+deactivate FE_CART
+PROD_UI -> TOAST: show("Produs adăugat în coș!", 'success')
+
+' ═══════════════════════════════════════════════════════════
+== UC-7: Review Shopping Cart ==
+' ═══════════════════════════════════════════════════════════
+Client -> CART_UI: clicks cart icon — drawer opens
+CART_UI -> FE_CART: cart() [computed signal]
+
+alt Guest
+    FE_CART -> LS: read ptw_guest_cart
+    FE_CART -> FE_CART: guestToCart(items)\n(converts to Cart shape, no HTTP)
+    FE_CART --> CART_UI: Cart (from localStorage)
+else Authenticated — cart already loaded on login
+    note right of FE_CART
+      On login, CartService.load() is called:
+      • If guest items exist → mergeGuestCart() →
+        POST /api/cart/items for each guest item,
+        then GET /api/cart to sync server state.
+      • Otherwise GET /api/cart directly.
+    end note
+    FE_CART --> CART_UI: Cart (from _serverCart signal)
+end
+
+alt Cart is empty (UC-7.E1)
+    CART_UI --> Client: empty state: "Coșul tău este gol"\n+ "Explorează Catalogul" button
+else Cart has items
+    CART_UI --> Client: renders items (name, unitPrice, qty, subtotal)\n+ summary (subtotal, free shipping, total)
+end
+
+' ═══════════════════════════════════════════════════════════
+== UC-8: Modify Cart (Quantity & Remove) ==
+' ═══════════════════════════════════════════════════════════
+
+opt Change Quantity (± buttons)
+    Client -> CART_UI: clicks − or + on item
+    CART_UI -> FE_CART: updateQuantity(itemId, newQty)
+    activate FE_CART
+    alt Guest
+        FE_CART -> LS: update qty in ptw_guest_cart\n(remove if newQty ≤ 0)
+    else Authenticated
+        FE_CART -> HTTP: PATCH /api/cart/items/{itemId}\n{qty: newQty}
+        HTTP -> CART_CTRL: updateQuantity(@Principal, itemId, {qty})
+        CART_CTRL -> BE_CART: updateItemQuantity(username, itemId, qty)
+        BE_CART -> CART_REPO: save(updated CartItem)
+        CART_REPO -> DB: UPDATE cart_items SET quantity = ? WHERE id = ?
+        DB --> CART_REPO: updated
+        BE_CART --> CART_CTRL: CartDTO
+        CART_CTRL --> HTTP: 200 OK {CartDTO}
+        HTTP --> FE_CART: CartDTO
+        FE_CART -> FE_CART: _serverCart.set(CartDTO)
+    end
+    FE_CART --> CART_UI: cart signal recomputes subtotal & total
+    deactivate FE_CART
+end
+
+opt Remove Item (UC-8 — includes UC-7)
+    Client -> CART_UI: clicks ✕ on item
+    CART_UI -> CART_UI: window.confirm("Eliminați «name» din coș?")
+    alt Client cancels
+        CART_UI --> Client: no change
+    else Client confirms
+        CART_UI -> FE_CART: removeItem(itemId)
+        activate FE_CART
+        alt Guest
+            FE_CART -> LS: filter item from ptw_guest_cart
+        else Authenticated
+            FE_CART -> HTTP: DELETE /api/cart/items/{itemId}
+            HTTP -> CART_CTRL: removeItem(@Principal, itemId)
+            CART_CTRL -> BE_CART: removeItem(username, itemId)
+            BE_CART -> CART_REPO: delete(CartItem)
+            CART_REPO -> DB: DELETE FROM cart_items WHERE id = ?
+            DB --> CART_REPO: deleted
+            BE_CART --> CART_CTRL: CartDTO (updated)
+            CART_CTRL --> HTTP: 200 OK {CartDTO}
+            HTTP --> FE_CART: CartDTO
+            FE_CART -> FE_CART: _serverCart.set(CartDTO)
+        end
+        FE_CART --> CART_UI: cart signal updates (item count decreases)
+        deactivate FE_CART
+        CART_UI -> TOAST: show("«name» eliminat din coș.", 'success')
+    end
+end
+
+' ═══════════════════════════════════════════════════════════
+== UC-9 (includes UC-2): Checkout — Auth Guard ==
+' ═══════════════════════════════════════════════════════════
+Client -> CHECKOUT_UI: clicks "Finalizează Comanda →" in drawer
+CHECKOUT_UI -> GUARD: canActivate(/checkout)?
+
+alt Guest — not authenticated
+    GUARD --> LOGIN_UI: redirect to /login?returnUrl=/checkout
+    note right of GUARD
+      authGuard stores returnUrl so after
+      successful login the user lands back
+      on /checkout — UC-9 includes UC-2.
+    end note
+    Client -> LOGIN_UI: completes login (see UC-2 above)
+    LOGIN_UI -> CHECKOUT_UI: navigateByUrl('/checkout')
+end
+
+' ═══════════════════════════════════════════════════════════
+== UC-9 & UC-12: Checkout Form & Payment ==
+' ═══════════════════════════════════════════════════════════
+CHECKOUT_UI --> Client: displays form:\nSection 1 — Delivery (firstName, lastName,\ndeliveryAddress, city, county, phone)\nSection 2 — Payment method (CARD / B2B / RAMBURS)
+
+alt CARD selected (UC-12: Process Payment)
+    CHECKOUT_UI --> Client: shows card detail fields:\ncardNumber, cardExpiry, cardCvv
+    note right of CHECKOUT_UI
+      Card fields are required before submit.
+      No external payment gateway — payment
+      method is stored on the order record.
+      Full gateway integration is out of scope.
+    end note
+end
+
+Client -> CHECKOUT_UI: fills form & clicks "PLASEAZĂ COMANDA"
+
+alt Form invalid or card fields empty for CARD
+    CHECKOUT_UI --> Client: marks fields touched, shows error:\n"Completați toate datele cardului"
+else Form valid
+    CHECKOUT_UI -> FE_ORDER: checkout(CheckoutRequest)
+    activate FE_ORDER
+    note right of FE_ORDER
+      CheckoutRequest = {
+        firstName, lastName,
+        deliveryAddress, city, county, phone,
+        paymentMethod: 'CARD'|'B2B'|'RAMBURS'
+      }
+      No cartId — cart is resolved server-side
+      from the authenticated user's session.
+    end note
+    FE_ORDER -> HTTP: POST /api/orders/checkout\n{CheckoutRequest}
+    activate HTTP
+    HTTP -> ORDER_CTRL: processCheckout(@Principal, CheckoutRequest)
+    activate ORDER_CTRL
+    ORDER_CTRL -> BE_ORDER: createOrderAndPay(username, req)
+    activate BE_ORDER
+
+    BE_ORDER -> CART_REPO: findByUser(user)
+    CART_REPO -> DB: SELECT cart + items WHERE user_id = ?
+    DB --> CART_REPO: Cart entity
+    CART_REPO --> BE_ORDER: Cart (items + totals)
+
+    BE_ORDER -> BE_ORDER: validate stock for ALL cart items\n(throws IllegalStateException if any stockQty < qty)
+
+    alt UC-9.E1 — product no longer available
+        BE_ORDER --> ORDER_CTRL: throws IllegalStateException\n"Insufficient stock for: <name>"
+        ORDER_CTRL --> HTTP: 422 {error: "Insufficient stock for: <name>"}
+        HTTP --> FE_ORDER: 422 error
+        FE_ORDER --> CHECKOUT_UI: errorMessage = server message
+        CHECKOUT_UI --> Client: error alert shown,\ncart NOT modified — Client reviews & adjusts
+    else All stock available
+        loop for each CartItem
+            BE_ORDER -> BE_ORDER: create OrderItem (unitPrice snapshot)
+            BE_ORDER -> PROD_REPO: save(product — stockQty -= qty)
+            PROD_REPO -> DB: UPDATE products SET stock_qty = stock_qty - ?\nWHERE id = ?
+        end
+
+        BE_ORDER -> ORDER_REPO: save(Order + OrderItems)
+        ORDER_REPO -> DB: INSERT INTO orders\nINSERT INTO order_items
+        DB --> ORDER_REPO: Order persisted
+
+        BE_ORDER -> BE_CART: clear cart (cart.getItems().clear())
+        BE_CART -> CART_REPO: save(cart with empty items list)
+        CART_REPO -> DB: DELETE FROM cart_items WHERE cart_id = ?
+
+        BE_ORDER --> ORDER_CTRL: OrderConfirmationDTO {orderId, status, total}
+        deactivate BE_ORDER
+        ORDER_CTRL --> HTTP: 200 OK {OrderConfirmationDTO}
+        deactivate ORDER_CTRL
+        HTTP --> FE_ORDER: OrderConfirmationDTO
+        deactivate HTTP
+        FE_ORDER -> FE_CART: cart.reset() — clears client-side cart signal
+        FE_ORDER --> CHECKOUT_UI: navigate to /orders?confirmed={orderId}
+        deactivate FE_ORDER
+        CHECKOUT_UI --> Client: OrderHistoryComponent renders\nsuccess banner "Comanda #ORD-{id} plasată!"
+    end
+end
 
 @enduml

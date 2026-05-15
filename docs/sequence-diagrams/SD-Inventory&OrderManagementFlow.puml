@@ -5,91 +5,258 @@ actor Admin
 
 participant "AdminDashboard\n(Angular)" as UI
 participant "AdminService\n(Angular)" as FE_ADMIN
-participant "HTTP" as HTTP
+participant "HTTP / JwtAuthFilter" as HTTP
 participant "AdminController\n(Spring)" as CTRL
 participant "AdminLogicService\n(Spring)" as B_SVC
 participant "ProductRepository" as PROD_REPO
+participant "WheelRepository" as WHEEL_REPO
+participant "BearingRepository" as BEARING_REPO
 participant "OrderRepository" as ORDER_REPO
+participant "SupportTicketRepository" as TICKET_REPO
+participant "OrderService\n(Spring)" as ORDER_SVC
+participant "EmailService\n(Spring)" as EMAIL
 database "PostgreSQL" as DB
 
-== UC-16: Review Stock Levels ==
-Admin -> UI: navigates to Inventory tab
-UI -> FE_ADMIN: getStockLevels()
+note over UI, DB
+  All /api/admin/* routes are protected by authGuard + adminGuard.
+  adminGuard checks auth.isAdmin() — non-admins are redirected to /products.
+end note
+
+' ═══════════════════════════════════════════════════════════
+== Dashboard Load — Overview Tab (ngOnInit) ==
+' ═══════════════════════════════════════════════════════════
+Admin -> UI: navigates to /admin
+UI -> FE_ADMIN: getStats()
+activate FE_ADMIN
+FE_ADMIN -> HTTP: GET /api/admin/stats
+HTTP -> CTRL: getStats()
+CTRL -> B_SVC: getStats()
+B_SVC -> ORDER_REPO: findAll()
+ORDER_REPO -> DB: SELECT * FROM orders
+DB --> ORDER_REPO: List<Order>
+B_SVC -> PROD_REPO: findAll()
+PROD_REPO -> DB: SELECT * FROM products
+DB --> PROD_REPO: List<Product>
+B_SVC -> TICKET_REPO: countByResolvedFalse()
+TICKET_REPO -> DB: SELECT COUNT(*) FROM support_tickets WHERE resolved = false
+DB --> TICKET_REPO: count
+B_SVC -> B_SVC: compute totalSales (DELIVERED orders)\npendingOrdersCount (REGISTERED + CONFIRMED)\nlowStockCount (stockQty < 10)\nopenTicketsCount
+B_SVC --> CTRL: AdminStatsDTO
+CTRL --> HTTP: 200 OK {AdminStatsDTO}
+HTTP --> FE_ADMIN: AdminStatsDTO
+FE_ADMIN --> UI: stats signal set\nopenTicketCount badge on sidebar
+deactivate FE_ADMIN
+
+UI -> FE_ADMIN: getAllOrders() [for Recent Orders table]
+activate FE_ADMIN
+FE_ADMIN -> HTTP: GET /api/admin/orders
+HTTP -> CTRL: getAllOrders()
+CTRL -> B_SVC: fetchAllOrders()
+B_SVC -> ORDER_REPO: findAll()
+ORDER_REPO -> DB: SELECT * FROM orders JOIN order_items ...
+DB --> ORDER_REPO: List<Order>
+B_SVC --> CTRL: List<OrderDTO>
+CTRL --> HTTP: 200 OK List<OrderDTO>
+HTTP --> FE_ADMIN: List<OrderDTO>
+FE_ADMIN -> FE_ADMIN: orders.set(list)\nrecentOrders.set(list.slice(0, 5))
+FE_ADMIN --> UI: KPI cards + recent-orders table rendered
+deactivate FE_ADMIN
+UI --> Admin: Overview tab: 4 KPI cards + last 5 orders
+
+' ═══════════════════════════════════════════════════════════
+== UC-16: Review Stock Levels (Inventory tab) ==
+' ═══════════════════════════════════════════════════════════
+Admin -> UI: clicks "Stoc Produse" sidebar item
+UI -> FE_ADMIN: getInventory()
 activate FE_ADMIN
 FE_ADMIN -> HTTP: GET /api/admin/inventory
 HTTP -> CTRL: getInventoryStats()
 CTRL -> B_SVC: calculateStockLevels()
 B_SVC -> PROD_REPO: findAll()
-PROD_REPO -> DB: SELECT id, name, stock_qty FROM products
-DB --> PROD_REPO: Product rows
-PROD_REPO --> B_SVC: List<Product>
-B_SVC -> B_SVC: evaluateLowStock(products)
-B_SVC --> CTRL: InventoryReportDTO
+PROD_REPO -> DB: SELECT id, name, type, stock_qty FROM products
+DB --> PROD_REPO: List<Product>
+B_SVC -> B_SVC: for each product:\n  lowStock = (stockQty < 10)\n  build ProductStockDTO\n  if lowStock → add warning string
+B_SVC --> CTRL: InventoryReportDTO\n{totalProducts, lowStockCount, products[], lowStockWarnings[]}
 CTRL --> HTTP: 200 OK {InventoryReportDTO}
 HTTP --> FE_ADMIN: InventoryReportDTO
-FE_ADMIN --> UI: display inventory table & low-stock warnings
+FE_ADMIN --> UI: inventory signal set
 deactivate FE_ADMIN
+UI --> Admin: stock table (ID, name, type, qty, status)\nred "STOC CRITIC" alert box for low-stock items
 
-== UC-1: Add Products (Import CSV/JSON) ==
-opt Replenish / Import Products
-    Admin -> UI: uploads CSV/JSON file
-    UI -> FE_ADMIN: uploadProductFile(file)
-    FE_ADMIN -> HTTP: POST /api/admin/products/import\n(multipart/form-data)
-    HTTP -> CTRL: importProducts(MultipartFile)
-    CTRL -> B_SVC: parseAndImport(file)
-    B_SVC -> B_SVC: validate file format & data integrity
+' ═══════════════════════════════════════════════════════════
+== UC-1 (Alt 1.0): Import Products via CSV / JSON ==
+' ═══════════════════════════════════════════════════════════
+Admin -> UI: clicks "Adaugă Produse" → drags file into upload zone
+UI -> FE_ADMIN: uploadProductFile(file)
+activate FE_ADMIN
+FE_ADMIN -> HTTP: POST /api/admin/products/import\n(multipart/form-data, file)
+HTTP -> CTRL: importProducts(MultipartFile)
+CTRL -> B_SVC: parseAndImport(file)
+B_SVC -> B_SVC: detect extension (.csv / .json)
 
-    alt Valid File
-        B_SVC -> PROD_REPO: saveAll(newProducts)
-        PROD_REPO -> DB: INSERT INTO products ... ON CONFLICT DO UPDATE
-        DB --> PROD_REPO: records upserted
-        PROD_REPO --> B_SVC: List<Product>
-        B_SVC --> CTRL: ImportResultDTO (success log)
-        CTRL --> HTTP: 200 OK {ImportResultDTO}
-    else Invalid File (UC-1.E1 / E2)
-        B_SVC -> B_SVC: generate error details
-        B_SVC --> CTRL: throws ImportException
-        CTRL -> CTRL: GlobalExceptionHandler
-        CTRL --> HTTP: 400 Bad Request {errorDetails}
+alt Unsupported extension (UC-1.E1)
+    B_SVC -> B_SVC: result.errors.add("Format neacceptat. Folosiți .csv sau .json")
+    B_SVC --> CTRL: ImportResultDTO {successCount:0, errorCount:1, errors:[...]}
+    CTRL --> HTTP: 200 OK {ImportResultDTO}
+    note right of CTRL
+      No 400 is thrown — the backend wraps
+      all import errors into ImportResultDTO
+      and always returns 200. The UI checks
+      errorCount to decide how to display.
+    end note
+else Valid extension — process rows
+    loop for each record (UC-1.E2 — partial import on error)
+        B_SVC -> B_SVC: validate required fields\n(type, name, price, stockQty, material, size,\n + maxLoad for WHEEL | diameter for BEARING)
+        alt Record valid
+            alt type == WHEEL
+                B_SVC -> WHEEL_REPO: save(Wheel entity)
+                WHEEL_REPO -> DB: INSERT INTO products (dtype='WHEEL')\n+ wheel-specific columns
+            else type == BEARING
+                B_SVC -> BEARING_REPO: save(Bearing entity)
+                BEARING_REPO -> DB: INSERT INTO products (dtype='BEARING')\n+ bearing-specific columns
+            end
+            DB --> B_SVC: persisted — successCount++
+        else Record invalid
+            B_SVC -> B_SVC: result.errors.add("Rând N: <reason>")\nerrorCount++
+        end
     end
-
-    HTTP --> FE_ADMIN: response / error
-    FE_ADMIN --> UI: display import log (success or partial errors)
+    B_SVC --> CTRL: ImportResultDTO\n{successCount, errorCount, errors[]}
+    CTRL --> HTTP: 200 OK {ImportResultDTO}
 end
 
-== UC-15: Review and Modify Orders ==
-Admin -> UI: navigates to Orders tab
-UI -> FE_ADMIN: getAllOrders()
-FE_ADMIN -> HTTP: GET /api/admin/orders
-HTTP -> CTRL: getAllOrders()
-CTRL -> B_SVC: fetchAllOrders()
-B_SVC -> ORDER_REPO: findAll()
-ORDER_REPO -> DB: SELECT * FROM orders
-DB --> ORDER_REPO: Order rows
-ORDER_REPO --> B_SVC: List<Order>
-B_SVC --> CTRL: List<OrderDTO>
-CTRL --> HTTP: 200 OK List<OrderDTO>
-HTTP --> FE_ADMIN: List<OrderDTO>
-FE_ADMIN --> UI: render comprehensive order list
+HTTP --> FE_ADMIN: ImportResultDTO
+FE_ADMIN --> UI: importResult signal set
+deactivate FE_ADMIN
+UI --> Admin: green summary "N produse importate"\n+ red error list if errorCount > 0
 
-opt Modify Order Status
-    Admin -> UI: changes order status to "Shipped"
-    UI -> FE_ADMIN: updateOrderStatus(orderId, 'ON_GOING')
-    FE_ADMIN -> HTTP: PUT /api/admin/orders/{id}/status\n{"status": "ON_GOING"}
-    HTTP -> CTRL: updateStatus(orderId, status)
+' ═══════════════════════════════════════════════════════════
+== UC-1 (Alt 1.0): Manual Product Add ==
+' ═══════════════════════════════════════════════════════════
+opt Admin fills manual product form and clicks "Salvează Produsul"
+    Admin -> UI: fills ProductCreateRequest fields\n(type, name, price, stockQty, material, size,\n maxLoad [WHEEL] | diameter [BEARING])
+    UI -> FE_ADMIN: createProduct(ProductCreateRequest)
+    activate FE_ADMIN
+    FE_ADMIN -> HTTP: POST /api/admin/products\n{ProductCreateRequest JSON}
+    HTTP -> CTRL: addProduct(ProductCreateRequest)
+    CTRL -> B_SVC: createProduct(req)
+    B_SVC -> B_SVC: validate required fields per type
+    alt Validation fails
+        B_SVC --> CTRL: throws IllegalArgumentException
+        CTRL --> HTTP: 401/422 {error: "..."}
+        HTTP --> FE_ADMIN: error
+        FE_ADMIN --> UI: addError signal set
+        UI --> Admin: red error alert shown
+    else Valid
+        alt type == WHEEL
+            B_SVC -> WHEEL_REPO: save(Wheel)
+            WHEEL_REPO -> DB: INSERT INTO products (dtype='WHEEL', ...)
+        else type == BEARING
+            B_SVC -> BEARING_REPO: save(Bearing)
+            BEARING_REPO -> DB: INSERT INTO products (dtype='BEARING', ...)
+        end
+        DB --> B_SVC: Product entity
+        B_SVC --> CTRL: ProductDTO
+        CTRL --> HTTP: 200 OK {ProductDTO}
+        HTTP --> FE_ADMIN: ProductDTO
+        FE_ADMIN --> UI: addSuccess = "Produsul «name» adăugat."\nproductForm.reset()
+        deactivate FE_ADMIN
+        UI --> Admin: green success alert
+    end
+end
+
+' ═══════════════════════════════════════════════════════════
+== UC-15: Review and Modify Orders ==
+' ═══════════════════════════════════════════════════════════
+Admin -> UI: clicks "Comenzi" sidebar item
+note right of UI: loadOrders() fires — same GET /api/admin/orders\nflow as overview tab (already shown above)
+UI --> Admin: full order table:\n#ORD-{id}, client, date, total,\npayment method, status badge, status <select>
+
+opt Admin changes order status via dropdown
+    Admin -> UI: selects new status in <select>\n(e.g. REGISTERED → CONFIRMED → ON_GOING → DELIVERED)
+    UI -> FE_ADMIN: updateOrderStatus(orderId, newStatus)
+    activate FE_ADMIN
+    FE_ADMIN -> HTTP: PUT /api/admin/orders/{orderId}/status\n{"status": "DELIVERED"}
+    HTTP -> CTRL: updateOrderStatus(orderId, {status})
     CTRL -> B_SVC: changeOrderStatus(orderId, status)
     B_SVC -> ORDER_REPO: findById(orderId)
     ORDER_REPO -> DB: SELECT * FROM orders WHERE id = ?
     DB --> ORDER_REPO: Order row
     ORDER_REPO --> B_SVC: Order entity
-    B_SVC -> ORDER_REPO: save(order with new status)
+
+    alt Admin sets status to CANCELED (stock restoration)
+        note right of B_SVC
+          If new status is CANCELED and
+          current status is not already CANCELED,
+          stock is returned for each OrderItem.
+        end note
+        loop for each OrderItem
+            B_SVC -> PROD_REPO: save(product — stockQty += qty)
+            PROD_REPO -> DB: UPDATE products SET stock_qty = stock_qty + ?\nWHERE id = ?
+        end
+    end
+
+    B_SVC -> ORDER_REPO: save(order — status = newStatus)
     ORDER_REPO -> DB: UPDATE orders SET status = ? WHERE id = ?
     DB --> ORDER_REPO: row updated
     ORDER_REPO --> B_SVC: Order entity
-    B_SVC --> CTRL: OrderDTO
+
+    ' UC-15 Flow §4: notify client on status change
+    B_SVC -> B_SVC: look up order.user.email
+    B_SVC -> EMAIL: sendEmail(clientEmail,\n  "Actualizare comandă #ORD-{id}",\n  "Statusul comenzii dvs. a fost actualizat la: {newStatus}")
+    note right of EMAIL
+      EmailService logs to console in dev.
+      Client is notified per UC-15 Flow §4.
+    end note
+    EMAIL --> B_SVC: void
+
+    B_SVC --> CTRL: OrderDTO (updated status)
     CTRL --> HTTP: 200 OK {OrderDTO}
-    HTTP --> FE_ADMIN: success
-    FE_ADMIN --> UI: update order row in table
+    HTTP --> FE_ADMIN: OrderDTO
+    FE_ADMIN -> UI: orders.update — replace row with updated DTO\nrecentOrders.update — same
+    FE_ADMIN -> FE_ADMIN: getStats() — refresh KPI counters
+    deactivate FE_ADMIN
+    UI --> Admin: status badge in row updates instantly
+end
+
+' ═══════════════════════════════════════════════════════════
+== UC-14 (Admin side): Support Tickets ==
+' ═══════════════════════════════════════════════════════════
+Admin -> UI: clicks "Mesaje Suport" sidebar item
+UI -> FE_ADMIN: getTickets()
+activate FE_ADMIN
+FE_ADMIN -> HTTP: GET /api/admin/tickets
+HTTP -> CTRL: getTickets()
+CTRL -> B_SVC: getTickets()
+B_SVC -> TICKET_REPO: findAllByOrderByCreatedAtDesc()
+TICKET_REPO -> DB: SELECT * FROM support_tickets\nORDER BY created_at DESC
+DB --> TICKET_REPO: List<SupportTicket>
+B_SVC --> CTRL: List<SupportTicketDTO>
+CTRL --> HTTP: 200 OK List<SupportTicketDTO>
+HTTP --> FE_ADMIN: List<SupportTicketDTO>
+FE_ADMIN -> FE_ADMIN: tickets signal set\nopenTicketCount = list.filter(!resolved).length
+FE_ADMIN --> UI: tickets table + openTicketCount updates sidebar badge
+deactivate FE_ADMIN
+UI --> Admin: table: id, name, email (mailto link),\nmessage (truncated), date, status badge,\n"Marchează Rezolvat" button (open tickets only)
+
+opt Admin clicks "Marchează Rezolvat"
+    Admin -> UI: clicks button for ticket {id}
+    UI -> FE_ADMIN: resolveTicket(ticketId)
+    activate FE_ADMIN
+    FE_ADMIN -> HTTP: PUT /api/admin/tickets/{id}/resolve
+    HTTP -> CTRL: resolveTicket(id)
+    CTRL -> B_SVC: resolveTicket(id)
+    B_SVC -> TICKET_REPO: findById(id)
+    TICKET_REPO -> DB: SELECT * FROM support_tickets WHERE id = ?
+    DB --> TICKET_REPO: SupportTicket
+    B_SVC -> TICKET_REPO: save(ticket — resolved = true)
+    TICKET_REPO -> DB: UPDATE support_tickets SET resolved = true WHERE id = ?
+    DB --> TICKET_REPO: row updated
+    B_SVC --> CTRL: SupportTicketDTO (resolved: true)
+    CTRL --> HTTP: 200 OK {SupportTicketDTO}
+    HTTP --> FE_ADMIN: SupportTicketDTO
+    FE_ADMIN -> UI: tickets.update — replace ticket in list\nopenTicketCount--\ngetStats() — refresh KPI
+    deactivate FE_ADMIN
+    UI --> Admin: ticket row shows "Rezolvat" badge,\nbutton disappears, sidebar badge decrements
 end
 
 @enduml

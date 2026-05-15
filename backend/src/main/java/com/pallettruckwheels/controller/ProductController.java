@@ -23,7 +23,8 @@ public class ProductController {
             @RequestParam(required = false) String size,
             @RequestParam(required = false) String material,
             @RequestParam(required = false) Integer maxLoad,
-            @RequestParam(required = false) String diameter) {
+            @RequestParam(required = false) String diameter,
+            @RequestParam(required = false) String bearingMaterial) {
 
         ProductFilterRequest filter = new ProductFilterRequest();
         filter.setName(name);
@@ -32,9 +33,11 @@ public class ProductController {
         filter.setMaterial(material);
         filter.setMaxLoad(maxLoad);
         filter.setDiameter(diameter);
+        filter.setBearingMaterial(bearingMaterial);
 
         boolean hasFilter = name != null || type != null || size != null
-                || material != null || maxLoad != null || diameter != null;
+                || material != null || maxLoad != null || diameter != null
+                || bearingMaterial != null;
 
         List<ProductDTO> products = hasFilter
                 ? productService.getFilteredProducts(filter)

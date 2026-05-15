@@ -28,6 +28,14 @@ public class CartController {
         return ResponseEntity.ok(cartService.addItemToCart(principal.getUsername(), req));
     }
 
+    @PatchMapping("/items/{itemId}")
+    public ResponseEntity<CartDTO> updateQuantity(@AuthenticationPrincipal UserDetails principal,
+                                                  @PathVariable Long itemId,
+                                                  @RequestBody java.util.Map<String, Integer> body) {
+        int qty = body.getOrDefault("qty", 1);
+        return ResponseEntity.ok(cartService.updateItemQuantity(principal.getUsername(), itemId, qty));
+    }
+
     @DeleteMapping("/items/{itemId}")
     public ResponseEntity<CartDTO> removeItem(@AuthenticationPrincipal UserDetails principal,
                                               @PathVariable Long itemId) {

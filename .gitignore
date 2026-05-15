@@ -21,3 +21,16 @@ gradle-app.setting
 .classpath
 /backend/target/
 /stitch_panou_administrare_dashboard/
+/backend/.idea/compiler.xml
+/.idea/copilot.data.migration.ask2agent.xml
+/.idea/ECommerce-App-for-Pallet-Truck-Wheels-.iml
+/backend/.idea/encodings.xml
+/backend/.idea/jarRepositories.xml
+/.idea/misc.xml
+/.idea/modules.xml
+/backend/.idea/misc.xml
+/.idea/vcs.xml
+/backend/.idea/vcs.xml
+/.idea/.gitignore
+/backend/.idea/.gitignore
+/.claude/settings.local.json
