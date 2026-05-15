@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { AdminStats, InventoryReport, ImportResult, ProductCreateRequest, SupportTicket } from '../models/admin.model';
+import { AdminStats, InventoryReport, ImportResult, ProductCreateRequest, ProductStock, SupportTicket } from '../models/admin.model';
 import { Order } from '../models/order.model';
 import { Product } from '../models/product.model';
 import { environment } from '../../../environments/environment';
